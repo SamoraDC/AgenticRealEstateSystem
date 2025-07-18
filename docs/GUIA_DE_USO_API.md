@@ -146,8 +146,8 @@ api_config.use_real_api = True
 
 Certifique-se que o `.env` contém:
 ```env
-RENTCAST_API_KEY=01e1101b77c54f1b8e804ba212a4ccfc
-OPENROUTER_API_KEY=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
+RENTCAST_API_KEY=01
+OPENROUTER_API_KEY=sk
 ENVIRONMENT=development
 DEBUG=true
 ```
