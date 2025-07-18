@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Integration Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .loading { background-color: #fff3cd; border-color: #ffeaa7; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .log { background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 3px; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Frontend-Backend Integration Test</h1>
+    
+    <div class="test-section">
+        <h2>1. Test Properties API</h2>
+        <button onclick="testPropertiesAPI()">Load Properties</button>
+        <div id="properties-result" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Test Agent Session</h2>
+        <button onclick="testAgentSession()">Create Agent Session</button>
+        <div id="agent-result" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Test Full Chat Flow</h2>
+        <button onclick="testFullChatFlow()">Test Full Chat</button>
+        <div id="chat-result" class="log"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        let testProperty = null;
+        let testSession = null;
+
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}\n`;
+            element.textContent += logMessage;
+            element.scrollTop = element.scrollHeight;
+            
+            // Update section styling
+            const section = element.closest('.test-section');
+            section.className = 'test-section';
+            if (type === 'success') section.classList.add('success');
+            if (type === 'error') section.classList.add('error');
+            if (type === 'loading') section.classList.add('loading');
+        }
+
+        async function testPropertiesAPI() {
+            const resultId = 'properties-result';
+            document.getElementById(resultId).textContent = '';
+            log(resultId, '🚀 Testing Properties API...', 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE}/properties/search?mode=mock`);
+                const data = await response.json();
+                
+                if (data.success && data.data && data.data.length > 0) {
+                    testProperty = data.data[0];
+                    log(resultId, `✅ SUCCESS: Found ${data.data.length} properties`);
+                    log(resultId, `📍 First property: ${testProperty.formattedAddress}`);
+                    log(resultId, `🆔 Property ID: ${testProperty.id}`);
+                    log(resultId, `💰 Price: $${testProperty.price.toLocaleString()}`);
+                    log(resultId, '🎯 Property saved for next tests', 'success');
+                } else {
+                    log(resultId, `❌ FAILED: Invalid response structure`, 'error');
+                    log(resultId, JSON.stringify(data, null, 2));
+                }
+            } catch (error) {
+                log(resultId, `❌ ERROR: ${error.message}`, 'error');
+                console.error('Properties API error:', error);
+            }
+        }
+
+        async function testAgentSession() {
+            const resultId = 'agent-result';
+            document.getElementById(resultId).textContent = '';
+            log(resultId, '🚀 Testing Agent Session...', 'loading');
+            
+            if (!testProperty) {
+                log(resultId, '⚠️ No test property available. Please run Properties API test first.', 'error');
+                return;
+            }
+            
+            try {
+                const sessionData = {
+                    property_id: testProperty.id,
+                    mode: 'details',
+                    language: 'en'
+                };
+                
+                log(resultId, `🏠 Creating session for property: ${testProperty.formattedAddress}`);
+                log(resultId, `🆔 Using property ID: ${testProperty.id}`);
+                
+                const response = await fetch(`${API_BASE}/agent/session/start?mode=mock`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(sessionData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data && data.data.session) {
+                    testSession = data.data.session;
+                    log(resultId, `✅ SUCCESS: Session created`);
+                    log(resultId, `🆔 Session ID: ${testSession.session_id}`);
+                    log(resultId, `🤖 Current Agent: ${testSession.current_agent}`);
+                    log(resultId, `🎯 Session saved for next tests`, 'success');
+                } else {
+                    log(resultId, `❌ FAILED: Invalid session response`, 'error');
+                    log(resultId, JSON.stringify(data, null, 2));
+                }
+            } catch (error) {
+                log(resultId, `❌ ERROR: ${error.message}`, 'error');
+                console.error('Agent session error:', error);
+            }
+        }
+
+        async function testFullChatFlow() {
+            const resultId = 'chat-result';
+            document.getElementById(resultId).textContent = '';
+            log(resultId, '🚀 Testing Full Chat Flow...', 'loading');
+            
+            if (!testProperty || !testSession) {
+                log(resultId, '⚠️ Prerequisites missing. Please run previous tests first.', 'error');
+                return;
+            }
+            
+            try {
+                const messageData = {
+                    message: 'Tell me about this property',
+                    session_id: testSession.session_id
+                };
+                
+                log(resultId, `💬 Sending message to agent...`);
+                log(resultId, `📝 Message: "${messageData.message}"`);
+                log(resultId, `🆔 Session: ${messageData.session_id}`);
+                
+                const response = await fetch(`${API_BASE}/agent/chat?mode=mock`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(messageData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    const agentResponse = data.data;
+                    log(resultId, `✅ SUCCESS: Agent responded`);
+                    log(resultId, `🤖 Agent: ${agentResponse.agent_name}`);
+                    log(resultId, `💬 Response: ${agentResponse.message.substring(0, 200)}...`);
+                    
+                    // Check if agent is using property data
+                    const hasPropertyData = agentResponse.message.includes('Miami') && 
+                                          agentResponse.message.includes('$') &&
+                                          agentResponse.message.includes(testProperty.formattedAddress.split(',')[0]);
+                    
+                    if (hasPropertyData) {
+                        log(resultId, `🎯 ✅ EXCELLENT: Agent is using actual property data!`, 'success');
+                        log(resultId, `✅ Property address found in response`);
+                        log(resultId, `✅ Price information included`);
+                        log(resultId, `✅ Miami location confirmed`);
+                    } else {
+                        log(resultId, `⚠️ WARNING: Agent may not be using property data`, 'error');
+                        log(resultId, `🔍 Looking for: Miami, $, ${testProperty.formattedAddress.split(',')[0]}`);
+                    }
+                } else {
+                    log(resultId, `❌ FAILED: Invalid chat response`, 'error');
+                    log(resultId, JSON.stringify(data, null, 2));
+                }
+            } catch (error) {
+                log(resultId, `❌ ERROR: ${error.message}`, 'error');
+                console.error('Chat flow error:', error);
+            }
+        }
+
+        // Auto-run tests on page load
+        window.addEventListener('load', () => {
+            console.log('🧪 Frontend Integration Test Page Loaded');
+            console.log('Click buttons to run tests or run them automatically');
+            
+            // Uncomment to auto-run all tests
+            // setTimeout(() => {
+            //     testPropertiesAPI();
+            //     setTimeout(() => testAgentSession(), 2000);
+            //     setTimeout(() => testFullChatFlow(), 4000);
+            // }, 1000);
+        });
+    </script>
+</body>
+</html> 

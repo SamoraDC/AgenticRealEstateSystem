@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Buttons</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .button {
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            transition: background 0.2s;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .secondary {
+            background: #6c757d;
+            border: 1px solid #6c757d;
+        }
+        .secondary:hover {
+            background: #545b62;
+        }
+        .log {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Debug Buttons Test</h1>
+    <p>Teste para verificar se os eventos de clique estão funcionando corretamente.</p>
+    
+    <button class="button" onclick="testViewDetails()">
+        👁️ View Details
+    </button>
+    
+    <button class="button secondary" onclick="testScheduleVisit()">
+        📅 Schedule Visit
+    </button>
+    
+    <button class="button" onclick="testOpenChat()">
+        💬 Open Chat
+    </button>
+    
+    <button class="button secondary" onclick="testCloseChat()">
+        ❌ Close Chat
+    </button>
+    
+    <div id="log" class="log">
+Logs aparecerão aqui...
+    </div>
+
+    <script>
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.textContent += `[${timestamp}] ${message}\n`;
+        }
+        
+        function testViewDetails() {
+            log('🔵 View Details button clicked!');
+            log('📦 Simulating property data');
+            log('🎯 Calling onSelect handler');
+            
+            // Simulate the actual handler
+            const property = {
+                id: 'test-property',
+                formattedAddress: '123 Test Street, Test City'
+            };
+            
+            log(`🏠 View Details clicked for property: ${property.formattedAddress}`);
+            log('✅ openChat called with mode: details');
+        }
+        
+        function testScheduleVisit() {
+            log('📅 Schedule Visit button clicked!');
+            log('📦 Simulating property data');
+            log('🎯 Calling onSchedule handler');
+            
+            // Simulate the actual handler
+            const property = {
+                id: 'test-property',
+                formattedAddress: '123 Test Street, Test City'
+            };
+            
+            log(`📅 Schedule Visit clicked for property: ${property.formattedAddress}`);
+            log('✅ openChat called with mode: schedule');
+        }
+        
+        function testOpenChat() {
+            log('🔥 openChat called manually');
+            log('📡 OPEN_CHAT action would be dispatched');
+            log('🔄 Chat should open now');
+        }
+        
+        function testCloseChat() {
+            log('❌ closeChat called manually');
+            log('📡 CLOSE_CHAT action would be dispatched');
+            log('🔄 Chat should close now');
+        }
+        
+        // Initial log
+        log('🚀 Debug page loaded - all buttons should be clickable');
+    </script>
+</body>
+</html> 

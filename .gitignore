@@ -1,0 +1,7 @@
+.env
+.cache/
+logs/
+__pycache__/
+*.log
+.api_usage.json
+.venv/

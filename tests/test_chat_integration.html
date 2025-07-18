@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .property-card {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .log-output {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🤖 Chat Integration Test</h1>
+        
+        <div class="instructions">
+            <h3>📋 Test Instructions:</h3>
+            <ol>
+                <li>Open Developer Console (F12)</li>
+                <li>Go to http://localhost:8000 in another tab</li>
+                <li>Click "View Details" or "Schedule Visit" on any property</li>
+                <li>Check console logs here and in the main app</li>
+                <li>Look for the debug messages we added</li>
+            </ol>
+        </div>
+
+        <div class="property-card">
+            <h3>🏠 Debug Info to Look For:</h3>
+            <ul>
+                <li><strong>🏠 View Details clicked for property:</strong> [property address]</li>
+                <li><strong>🔍 State before openChat:</strong> {chatOpen: false, chatProperty: null}</li>
+                <li><strong>🔥 openChat called with:</strong> {property: [address], mode: 'details'}</li>
+                <li><strong>📡 OPEN_CHAT action dispatched</strong></li>
+                <li><strong>📡 REDUCER: OPEN_CHAT action received</strong> [payload]</li>
+                <li><strong>🤖 PropertyAgentChat rendered with:</strong> [component props]</li>
+            </ul>
+        </div>
+
+        <div class="property-card">
+            <h3>🔧 Possible Issues to Check:</h3>
+            <ul>
+                <li><strong>PropertyCard buttons not calling handlers:</strong> Check if onSelect/onSchedule props are passed correctly</li>
+                <li><strong>Context not updating:</strong> Verify OPEN_CHAT reducer case executes</li>
+                <li><strong>Component not rendering:</strong> Check conditional rendering logic</li>
+                <li><strong>CSS/z-index issues:</strong> Modal might be hidden behind other elements</li>
+                <li><strong>Import errors:</strong> PropertyAgentChat component might not be imported properly</li>
+            </ul>
+        </div>
+
+        <div class="property-card">
+            <h3>🚀 Quick Tests:</h3>
+            <button class="button" onclick="testLocalStorage()">Test LocalStorage</button>
+            <button class="button" onclick="testConsole()">Test Console</button>
+            <button class="button" onclick="checkMainApp()">Check Main App</button>
+            <button class="button" onclick="clearLogs()">Clear Logs</button>
+        </div>
+
+        <div id="logOutput" class="log-output">
+            <div>🎯 Debug logs will appear here...</div>
+            <div>💡 Open the main app and try clicking the buttons!</div>
+        </div>
+    </div>
+
+    <script>
+        let logCount = 0;
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('logOutput');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            
+            let icon = '📝';
+            if (type === 'error') icon = '❌';
+            if (type === 'success') icon = '✅';
+            if (type === 'warning') icon = '⚠️';
+            
+            logEntry.innerHTML = `${icon} [${timestamp}] ${message}`;
+            logEntry.style.marginBottom = '2px';
+            
+            output.appendChild(logEntry);
+            output.scrollTop = output.scrollHeight;
+            logCount++;
+        }
+
+        function testLocalStorage() {
+            try {
+                localStorage.setItem('test', 'value');
+                localStorage.removeItem('test');
+                log('LocalStorage working correctly', 'success');
+            } catch (e) {
+                log('LocalStorage error: ' + e.message, 'error');
+            }
+        }
+
+        function testConsole() {
+            console.log('🧪 Test console message from debug page');
+            log('Test message sent to browser console', 'info');
+        }
+
+        function checkMainApp() {
+            const mainAppUrl = 'http://localhost:8000';
+            log(`Main app should be running at: ${mainAppUrl}`, 'info');
+            log('Click "View Details" or "Schedule Visit" on any property card', 'warning');
+        }
+
+        function clearLogs() {
+            document.getElementById('logOutput').innerHTML = '';
+            logCount = 0;
+            log('Logs cleared', 'info');
+        }
+
+        // Listen for messages from main app (if needed)
+        window.addEventListener('message', function(event) {
+            if (event.origin !== 'http://localhost:8000') return;
+            log(`Message from main app: ${JSON.stringify(event.data)}`, 'info');
+        });
+
+        // Auto-refresh instructions
+        setInterval(() => {
+            if (logCount === 0) {
+                log('💡 Remember: Open http://localhost:8000 and test the buttons!', 'warning');
+            }
+        }, 10000);
+
+        // Initial logs
+        log('🚀 Debug page loaded and ready', 'success');
+        log('🌐 Main application: http://localhost:8000', 'info');
+        log('📊 API Documentation: http://localhost:8000/api/docs', 'info');
+    </script>
+</body>
+</html> 
