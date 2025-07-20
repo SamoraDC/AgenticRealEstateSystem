@@ -39,6 +39,13 @@ try:
 except ImportError:
     LOGFIRE_AVAILABLE = False
 
+# Importar dashboard de observabilidade
+try:
+    from app.api.dashboard import dashboard_router, get_dashboard_metrics, broadcast_metrics_update
+    DASHBOARD_AVAILABLE = True
+except ImportError:
+    DASHBOARD_AVAILABLE = False
+
 # Configurar logging avançado
 logger = setup_logging(enable_logfire=LOGFIRE_AVAILABLE)
 
@@ -200,6 +207,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Incluir dashboard de observabilidade
+if DASHBOARD_AVAILABLE:
+    app.include_router(dashboard_router)
+    logger.info("SUCCESS: Dashboard de observabilidade integrado")
+else:
+    logger.warning("WARNING: Dashboard de observabilidade não disponível")
+
 # Middleware de instrumentação para observabilidade
 @app.middleware("http")
 async def observability_middleware(request: Request, call_next):
@@ -230,6 +244,15 @@ async def observability_middleware(request: Request, call_next):
             status_code=response.status_code,
             duration=duration
         )
+        
+        # Record metrics for dashboard
+        if DASHBOARD_AVAILABLE and not url_path.startswith('/dashboard'):
+            metrics = get_dashboard_metrics()
+            metrics.record_api_call(
+                f"FastAPI_{method}_{url_path.split('/')[1] if len(url_path.split('/')) > 1 else 'root'}",
+                response.status_code < 400,
+                duration
+            )
         
         # Log de performance se requisição for lenta
         if duration > 2.0:

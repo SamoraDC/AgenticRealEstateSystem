@@ -19,12 +19,114 @@ from langgraph.store.memory import InMemoryStore  # 🔥 NOVO: Store para memór
 
 from ..utils.logging import get_logger, log_handoff, log_performance, log_agent_action, log_api_call, log_error
 from ..utils.logfire_config import AgentExecutionContext, HandoffContext, get_logfire_config
+from ..utils.langsmith_config import LangGraphExecutionContext, get_langsmith_config, log_graph_startup, log_graph_completion
 from ..utils.ollama_fallback import generate_intelligent_fallback
 from config.settings import get_settings
 import time
 import os
 import random
 import asyncio
+
+
+async def create_pydantic_agent(agent_name: str, model_name: str = "mistralai/mistral-7b-instruct:free") -> Agent:
+    """
+    Standardized PydanticAI agent creation with comprehensive Logfire tracing.
+    
+    Args:
+        agent_name: Name of the agent for logging
+        model_name: OpenRouter model to use
+        
+    Returns:
+        Configured PydanticAI Agent with Logfire instrumentation
+        
+    Raises:
+        Exception: If agent creation fails
+    """
+    logger = get_logger(f"{agent_name}_factory")
+    settings = get_settings()
+    api_key = settings.apis.openrouter_key
+    
+    # Logfire tracing for agent creation
+    with AgentExecutionContext(agent_name, "agent_creation") as span:
+        
+        # Validate API key
+        if not api_key or api_key == "your_openrouter_api_key_here" or api_key.strip() == "":
+            error_msg = f"No valid OpenRouter API key found for {agent_name}"
+            logger.error(f"ERROR: {error_msg}")
+            if span:
+                span.set_attribute("agent.creation_error", error_msg)
+            raise ValueError(error_msg)
+        
+        # Enhanced debug logging with Logfire attributes
+        logger.info(f"DEBUG: Creating PydanticAI agent for {agent_name}")
+        logger.info(f"DEBUG: Model: {model_name}")
+        logger.info(f"DEBUG: API key length: {len(api_key)}")
+        logger.info(f"DEBUG: API key format valid: {api_key.startswith('sk-or-v1-')}")
+        
+        if span:
+            span.set_attributes({
+                "agent.name": agent_name,
+                "agent.model": model_name,
+                "agent.api_key_length": len(api_key),
+                "agent.api_key_valid_format": api_key.startswith('sk-or-v1-'),
+                "agent.creation_stage": "setup"
+            })
+        
+        try:
+            # Create provider with Logfire tracking
+            provider = OpenRouterProvider(api_key=api_key)
+            logger.info(f"DEBUG: OpenRouterProvider created successfully: {type(provider)}")
+            if span:
+                span.set_attribute("agent.provider_created", True)
+            
+            # Create model with Logfire tracking
+            model = OpenAIModel(model_name, provider=provider)
+            logger.info(f"DEBUG: OpenAIModel created successfully: {type(model)}")
+            if span:
+                span.set_attribute("agent.model_created", True)
+            
+            # Create agent with Logfire tracking
+            agent = Agent(model)
+            logger.info(f"DEBUG: Agent created successfully for {agent_name}: {type(agent)}")
+            if span:
+                span.set_attributes({
+                    "agent.agent_created": True,
+                    "agent.creation_success": True,
+                    "agent.creation_stage": "completed"
+                })
+            
+            # Log successful agent creation to Logfire
+            log_agent_action(
+                agent_name=agent_name,
+                action="agent_created",
+                details={
+                    "model": model_name,
+                    "provider": "OpenRouter",
+                    "success": True
+                }
+            )
+            
+            return agent
+            
+        except Exception as e:
+            error_msg = f"Failed to create PydanticAI agent for {agent_name}: {e}"
+            logger.error(f"ERROR: {error_msg}")
+            
+            if span:
+                span.set_attributes({
+                    "agent.creation_success": False,
+                    "agent.creation_error": str(e),
+                    "agent.creation_stage": "failed"
+                })
+            
+            # Log failed agent creation to Logfire
+            log_error(e, context={
+                "agent_name": agent_name,
+                "model_name": model_name,
+                "operation": "agent_creation"
+            })
+            
+            raise
 
 
 class SwarmState(MessagesState):
@@ -56,8 +158,9 @@ async def search_agent_node(state: SwarmState) -> dict:
     """Nó do agente de busca: entende a intenção de busca usando PydanticAI."""
     logger = get_logger("search_agent")
     
-    # Instrumentação Logfire para rastreamento de execução
-    with AgentExecutionContext("search_agent", "property_search") as span:
+    # Instrumentação dupla: Logfire + LangSmith para rastreamento completo
+    with AgentExecutionContext("search_agent", "property_search") as logfire_span, \
+         LangGraphExecutionContext("swarm_graph", "search_agent", dict(state)) as langsmith_span:
         start_time = time.time()
         
         # 🔥 CORREÇÃO: Acessar mensagens corretamente no LangGraph
@@ -92,7 +195,7 @@ async def search_agent_node(state: SwarmState) -> dict:
 
         # Verificação corrigida da chave - não usar fallback se a chave existir
         if not api_key or api_key == "your_openrouter_api_key_here" or api_key.strip() == "":
-            logger.warning("❌ No valid OpenRouter key found. Using Ollama fallback.")
+            logger.warning("ERROR No valid OpenRouter key found. Using Ollama fallback.")
             fallback_response = await generate_intelligent_fallback("search_agent", user_message, state.get("context", {}).get("property_context", {}), "mock")
             
             # Log do fallback
@@ -105,7 +208,7 @@ async def search_agent_node(state: SwarmState) -> dict:
             return {"messages": [AIMessage(content=fallback_response)]}
 
         try:
-            logger.info(f"🧠 Using search agent for property search in {data_mode.upper()} mode: '{user_message}' (Key: {api_key[:10]}...)")
+            logger.info(f"BRAIN Using search agent for property search in {data_mode.upper()} mode: '{user_message}' (Key: {api_key[:10]}...)")
             
             # Try to get available properties from the system
             available_properties = []
@@ -122,11 +225,11 @@ async def search_agent_node(state: SwarmState) -> dict:
                     if response.status_code == 200:
                         data = response.json()
                         available_properties = data.get("properties", [])
-                        logger.info(f"🏠 Found {len(available_properties)} total properties in {data_mode} mode")
+                        logger.info(f"PROPERTY Found {len(available_properties)} total properties in {data_mode} mode")
                         
                         # 🔥 NOVO: Filtrar propriedades baseadas na mensagem do usuário
                         filtered_properties = filter_properties_by_user_intent(user_message, available_properties)
-                        logger.info(f"🎯 Filtered to {len(filtered_properties)} matching properties")
+                        logger.info(f"FILTER Filtered to {len(filtered_properties)} matching properties")
                     else:
                         logger.warning(f"Mock API returned status {response.status_code}")
                 else:
@@ -150,8 +253,27 @@ async def search_agent_node(state: SwarmState) -> dict:
             # 🔥 NOVO: Criar resumo inteligente das propriedades
             property_summary = create_intelligent_property_summary(user_message, filtered_properties, available_properties)
 
+            # 🔥 Add conversation context awareness
+            is_first_message = len(messages) <= 1
+            conversation_info = ""
+            if not is_first_message:
+                conversation_info = f"""
+CONVERSATION CONTEXT:
+- This is NOT the first message in the conversation (message #{len(messages)})
+- Continue the conversation naturally without greeting again
+- Build on previous context and maintain conversation flow
+"""
+            else:
+                conversation_info = """
+CONVERSATION CONTEXT:
+- This is the first message in the conversation
+- You can start with a greeting and introduction
+"""
+
             # Create comprehensive search prompt
             prompt = f"""You are Alex, a professional real estate search specialist. You help clients find properties that match their needs and provide market insights.
+
+{conversation_info}
 
 User's Message: "{user_message}"
 Data Mode: {data_mode.upper()}
@@ -167,6 +289,7 @@ INSTRUCTIONS:
 6. Use appropriate emojis to make responses engaging
 7. Always end with a helpful question or suggestion to move the search forward
 8. Be professional but friendly and conversational
+9. IMPORTANT: If this is NOT the first message, do NOT greet the user again
 
 SEARCH STRATEGY:
 - For specific requests (like "pool"), look for properties that might have that feature
@@ -176,17 +299,95 @@ SEARCH STRATEGY:
 
 Respond now as Alex, using the available property information to help with their search."""
 
-            # Usar modelo Gemma-3 que está funcionando
-            model = OpenAIModel(
-                "google/gemma-3-27b-it:free",  # Modelo gratuito que funciona
-                provider=OpenRouterProvider(api_key=api_key),
-            )
-            agent = Agent(model)
+            # 🔥 Use standardized PydanticAI agent creation
+            primary_model = "mistralai/mistral-7b-instruct:free"
+            fallback_model = "mistralai/mistral-7b-instruct:free"
             
-            # Log da chamada LLM
-            llm_start = time.time()
-            response = await agent.run(prompt)
-            llm_duration = time.time() - llm_start
+            try:
+                agent = await create_pydantic_agent("search_agent", primary_model)
+            except Exception as setup_error:
+                logger.error(f"ERROR: Failed to create search agent: {setup_error}")
+                raise
+            
+            # Enhanced Logfire tracing for LLM call
+            with AgentExecutionContext("search_agent", "llm_inference") as llm_span:
+                llm_start = time.time()
+                try:
+                    logger.info(f"DEBUG: About to call agent.run() with prompt length: {len(prompt)}")
+                    
+                    if llm_span:
+                        llm_span.set_attributes({
+                            "llm.model": primary_model,
+                            "llm.prompt_length": len(prompt),
+                            "llm.provider": "OpenRouter",
+                            "llm.agent": "search_agent"
+                        })
+                    
+                    response = await agent.run(prompt)
+                    llm_duration = time.time() - llm_start
+                    logger.info(f"SUCCESS Primary model {primary_model} successful in {llm_duration:.2f}s")
+                    
+                    if llm_span:
+                        llm_span.set_attributes({
+                            "llm.success": True,
+                            "llm.duration_seconds": llm_duration,
+                            "llm.response_length": len(str(response.output)) if response.output else 0
+                        })
+                except Exception as primary_error:
+                    llm_duration = time.time() - llm_start
+                    error_msg = str(primary_error)
+                    logger.error(f"ERROR Primary model {primary_model} failed after {llm_duration:.2f}s: {error_msg}")
+                    
+                    if llm_span:
+                        llm_span.set_attributes({
+                            "llm.success": False,
+                            "llm.error": error_msg,
+                            "llm.duration_seconds": llm_duration,
+                            "llm.fallback_required": True
+                        })
+                    
+                    # Enhanced error analysis for 401 specifically
+                    if "401" in error_msg or "No auth credentials found" in error_msg:
+                        logger.error(f"ERROR 401 Authentication Error Details:")
+                        logger.error(f"  - API key length: {len(api_key) if api_key else 0}")
+                        logger.error(f"  - API key prefix: {api_key[:15] if api_key else 'None'}...")
+                        logger.error(f"  - API key ends correctly: {api_key.endswith('bac9') if api_key else False}")
+                        logger.error(f"  - Agent type: {type(agent)}")
+                        
+                        if llm_span:
+                            llm_span.set_attribute("llm.error_type", "authentication_error")
+                    
+                    # Log error to Logfire
+                    log_error(primary_error, context={
+                        "agent": "search_agent",
+                        "model": primary_model,
+                        "operation": "llm_inference",
+                        "duration": llm_duration
+                    })
+                    
+                    logger.info(f"RETRY Trying fallback model {fallback_model}")
+                    
+                    # Try fallback model using standardized creation
+                    with AgentExecutionContext("search_agent", "fallback_inference") as fallback_span:
+                        fallback_agent = await create_pydantic_agent("search_agent_fallback", fallback_model)
+                        
+                        if fallback_span:
+                            fallback_span.set_attributes({
+                                "llm.model": fallback_model,
+                                "llm.is_fallback": True,
+                                "llm.primary_error": error_msg
+                            })
+                        
+                        response = await fallback_agent.run(prompt)
+                        llm_duration = time.time() - llm_start
+                        logger.info(f"SUCCESS Fallback model {fallback_model} successful in {llm_duration:.2f}s")
+                        
+                        if fallback_span:
+                            fallback_span.set_attributes({
+                                "llm.success": True,
+                                "llm.duration_seconds": llm_duration,
+                                "llm.response_length": len(str(response.output)) if response.output else 0
+                            })
             
             log_api_call(
                 api_name="OpenRouter",
@@ -197,7 +398,7 @@ Respond now as Alex, using the available property information to help with their
             )
             
             # Check if response is too short or truncated
-            response_content = str(response.data)
+            response_content = str(response.output)
             if len(response_content.strip()) < 10:
                 logger.warning(f"⚠️ Search response too short ({len(response_content)} chars): '{response_content}'")
                 # Try with a simpler prompt
@@ -206,10 +407,10 @@ Respond now as Alex, using the available property information to help with their
 Respond helpfully about property search in 2-3 sentences. Be friendly and ask what they're looking for."""
                 
                 retry_response = await agent.run(simple_prompt)
-                retry_content = str(retry_response.data)
+                retry_content = str(retry_response.output)
                 if len(retry_content.strip()) > len(response_content.strip()):
                     response_content = retry_content
-                    logger.info(f"✅ Search retry successful: {len(response_content)} chars")
+                    logger.info(f"SUCCESS Search retry successful: {len(response_content)} chars")
             
             # Log da resposta bem-sucedida
             duration = time.time() - start_time
@@ -223,15 +424,15 @@ Respond helpfully about property search in 2-3 sentences. Be friendly and ask wh
                 }
             )
             
-            logger.info(f"✅ PydanticAI search agent response: {len(response_content)} chars")
-            logger.info(f"📝 Search response preview: {response_content[:100]}...")
+            logger.info(f"SUCCESS PydanticAI search agent response: {len(response_content)} chars")
+            logger.info(f"PREVIEW Search response preview: {response_content[:100]}...")
             return {"messages": [AIMessage(content=response_content)]}
 
         except Exception as e:
-            logger.error(f"❌ PydanticAI call failed for search agent: {e}")
+            logger.error(f"ERROR PydanticAI call failed for search agent: {e}")
             log_error(e, context={"agent": "search_agent", "operation": "llm_call"})
             
-            logger.info("🔄 Falling back to Ollama intelligent response generator")
+            logger.info("RETRY Falling back to Ollama intelligent response generator")
             fallback_response = await generate_intelligent_fallback("search_agent", user_message, state.get("context", {}).get("property_context", {}), "mock")
             
             # Log do fallback por erro
@@ -245,38 +446,46 @@ Respond helpfully about property search in 2-3 sentences. Be friendly and ask wh
 
 
 async def property_agent_node(state: SwarmState) -> dict:
-    """Nó do agente de propriedades: analisa uma propriedade específica usando OpenRouter direto."""
+    """Nó do agente de propriedades: analisa uma propriedade específica usando PydanticAI."""
     logger = get_logger("property_agent")
     
-    # 🔥 CORREÇÃO: Acessar mensagens corretamente no LangGraph
-    messages = state.messages if hasattr(state, 'messages') else state.get("messages", [])
-    if not messages:
-        logger.warning("No messages in state for property_agent")
-        return {"messages": [AIMessage(content="Olá! Sou Emma, especialista em análise de propriedades. Como posso ajudá-lo?")]}
-    
-    # Extrair mensagem do usuário (compatível com dict e LangChain messages)
-    last_message = messages[-1]
-    if hasattr(last_message, 'content'):
-        user_message = last_message.content
-    else:
-        user_message = last_message.get("content", "")
-    
-    context = state.get("context", {})
-    property_context = context.get("property_context", {})
-    data_mode = context.get("data_mode", "mock")  # Get data mode from context
-    
-    settings = get_settings()
-    api_key = settings.apis.openrouter_key
-
-    # Verificação corrigida da chave - não usar fallback se a chave existir
-    if not api_key or api_key == "your_openrouter_api_key_here" or api_key.strip() == "":
-        logger.warning("❌ No valid OpenRouter key found. Using Ollama fallback.")
-        fallback_response = await generate_intelligent_fallback("property_agent", user_message, property_context, data_mode)
-        return {"messages": [AIMessage(content=fallback_response)]}
+    # Instrumentação dupla: Logfire + LangSmith para rastreamento completo
+    with AgentExecutionContext("property_agent", "property_analysis") as logfire_span, \
+         LangGraphExecutionContext("swarm_graph", "property_agent", dict(state)) as langsmith_span:
         
-    try:
-        logger.info(f"🧠 Using direct OpenRouter call for property analysis in {data_mode.upper()} mode: '{user_message}' (Key: {api_key[:10]}...)")
-        logger.info(f"🏠 Property context: {property_context.get('formattedAddress', 'No address') if property_context else 'No property context'}")
+        # 🔥 CORREÇÃO: Acessar mensagens corretamente no LangGraph
+        messages = state.messages if hasattr(state, 'messages') else state.get("messages", [])
+        if not messages:
+            logger.warning("No messages in state for property_agent")
+            return {"messages": [AIMessage(content="Olá! Sou Emma, especialista em análise de propriedades. Como posso ajudá-lo?")]}
+        
+        # Extrair mensagem do usuário (compatível com dict e LangChain messages)
+        last_message = messages[-1]
+        if hasattr(last_message, 'content'):
+            user_message = last_message.content
+        else:
+            user_message = last_message.get("content", "")
+        
+        context = state.get("context", {})
+        property_context = context.get("property_context", {})
+        data_mode = context.get("data_mode", "mock")  # Get data mode from context
+        
+        settings = get_settings()
+        api_key = settings.apis.openrouter_key
+
+        # DEBUG: Log detailed API key information
+        logger.info(f"DEBUG: API key loaded - exists: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
+        logger.info(f"DEBUG: API key prefix: {api_key[:15] if api_key else 'None'}...")
+
+        # Verificação corrigida da chave - não usar fallback se a chave existir
+        if not api_key or api_key == "your_openrouter_api_key_here" or api_key.strip() == "":
+            logger.warning("ERROR No valid OpenRouter key found. Using Ollama fallback.")
+            fallback_response = await generate_intelligent_fallback("property_agent", user_message, property_context, data_mode)
+            return {"messages": [AIMessage(content=fallback_response)]}
+            
+        try:
+            logger.info(f"BRAIN Using direct OpenRouter call for property analysis in {data_mode.upper()} mode: '{user_message}' (Key: {api_key[:10]}...)")
+        logger.info(f"PROPERTY Property context: {property_context.get('formattedAddress', 'No address') if property_context else 'No property context'}")
         
         # Create property details string
         property_details = ""
@@ -309,8 +518,27 @@ PROPERTY DETAILS:
         else:
             property_details = "No specific property information available."
 
+        # 🔥 Add conversation context awareness
+        is_first_message = len(messages) <= 1
+        conversation_info = ""
+        if not is_first_message:
+            conversation_info = f"""
+CONVERSATION CONTEXT:
+- This is NOT the first message in the conversation (message #{len(messages)})
+- Continue the conversation naturally without greeting again
+- Build on previous context and maintain conversation flow
+"""
+        else:
+            conversation_info = """
+CONVERSATION CONTEXT:
+- This is the first message in the conversation
+- You can start with a greeting and introduction
+"""
+
         # Create comprehensive prompt with property context
         prompt = f"""You are Emma, a professional real estate property expert. You provide clear, objective, and helpful information about properties while being conversational and engaging.
+
+{conversation_info}
 
 {property_details}
 
@@ -324,6 +552,7 @@ INSTRUCTIONS:
 5. Keep responses concise but comprehensive (2-4 sentences)
 6. Always end with a question or suggestion to continue the conversation
 7. If asked about aspects not in the property details, acknowledge what you don't know but offer related helpful information
+8. IMPORTANT: If this is NOT the first message, do NOT greet the user again
 
 CONVERSATION FLOW:
 - Never ask the user to provide information you already have
@@ -333,69 +562,80 @@ CONVERSATION FLOW:
 
 Respond now as Emma, using the property information provided above to answer the user's question directly and professionally."""
 
-        # Usar chamada direta ao OpenRouter
-        import httpx
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "google/gemma-3-27b-it:free",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 1000,
-                    "top_p": 0.9,
-                    "frequency_penalty": 0.0,
-                    "presence_penalty": 0.0
-                },
-                timeout=45.0
-            )
+        # 🔥 Use standardized PydanticAI agent creation
+        try:
+            agent = await create_pydantic_agent("property_agent", "mistralai/mistral-7b-instruct:free")
             
-            if response.status_code == 200:
-                result = response.json()
-                content = result["choices"][0]["message"]["content"]
+            # Execute the analysis
+            llm_start = time.time()
+            logger.info(f"DEBUG: About to call property agent with prompt length: {len(prompt)}")
+            
+            try:
+                response = await agent.run(prompt)
+                llm_duration = time.time() - llm_start
+                logger.info(f"SUCCESS Property agent successful in {llm_duration:.2f}s")
+                
+                content = str(response.output)
                 
                 # Check if response is too short or truncated
                 if len(content.strip()) < 10:
-                    logger.warning(f"⚠️ Response too short ({len(content)} chars): '{content}'")
-                    # Try again with different parameters
-                    retry_response = await client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": "google/gemma-3-27b-it:free",
-                            "messages": [{"role": "user", "content": prompt}],
-                            "temperature": 0.5,
-                            "max_tokens": 1200,
-                            "top_p": 0.8
-                        },
-                        timeout=45.0
-                    )
+                    logger.warning(f"WARNING Response too short ({len(content)} chars): '{content}'")
+                    # Try with simpler prompt
+                    simple_prompt = f"""You are Emma, a real estate property expert. A user asked: "{user_message}"
                     
-                    if retry_response.status_code == 200:
-                        retry_result = retry_response.json()
-                        retry_content = retry_result["choices"][0]["message"]["content"]
-                        if len(retry_content.strip()) > len(content.strip()):
-                            content = retry_content
-                            logger.info(f"✅ Retry successful: {len(content)} chars")
+About this property: {property_context.get('formattedAddress', 'Address available')}
+Price: ${property_context.get('price', 'N/A')}/month
+
+Respond helpfully in 2-3 sentences."""
+                    
+                    retry_response = await agent.run(simple_prompt)
+                    retry_content = str(retry_response.output)
+                    if len(retry_content.strip()) > len(content.strip()):
+                        content = retry_content
+                        logger.info(f"SUCCESS Retry with simpler prompt successful: {len(content)} chars")
                 
-                logger.info(f"✅ Direct OpenRouter call successful: {len(content)} chars")
-                logger.info(f"📝 Response preview: {content[:100]}...")
+                log_api_call(
+                    api_name="OpenRouter-PydanticAI",
+                    endpoint="/chat/completions",
+                    method="POST",
+                    status_code=200,
+                    duration=llm_duration
+                )
+                
+                logger.info(f"SUCCESS PydanticAI property agent call successful: {len(content)} chars")
+                logger.info(f"PREVIEW Response preview: {content[:100]}...")
                 return {"messages": [AIMessage(content=content)]}
-            else:
-                logger.error(f"❌ OpenRouter API error: {response.status_code} - {response.text}")
-                raise Exception(f"OpenRouter API error: {response.status_code}")
+                
+            except Exception as primary_error:
+                llm_duration = time.time() - llm_start
+                error_msg = str(primary_error)
+                logger.error(f"ERROR Property agent failed after {llm_duration:.2f}s: {error_msg}")
+                
+                # Enhanced error analysis for 401 specifically
+                if "401" in error_msg or "No auth credentials found" in error_msg:
+                    logger.error(f"ERROR 401 Authentication Error in Property Agent:")
+                    logger.error(f"  - API key length: {len(api_key) if api_key else 0}")
+                    logger.error(f"  - API key prefix: {api_key[:15] if api_key else 'None'}...")
+                    logger.error(f"  - Agent type: {type(agent)}")
+                
+                # Try fallback agent
+                logger.info("RETRY Trying fallback agent for property analysis")
+                fallback_agent = await create_pydantic_agent("property_agent_fallback", "mistralai/mistral-7b-instruct:free")
+                
+                response = await fallback_agent.run(prompt)
+                content = str(response.output)
+                llm_duration = time.time() - llm_start
+                logger.info(f"SUCCESS Property agent fallback successful in {llm_duration:.2f}s")
+                
+                return {"messages": [AIMessage(content=content)]}
+                
+        except Exception as setup_error:
+            logger.error(f"ERROR: Failed to create property agent: {setup_error}")
+            raise
 
     except Exception as e:
-        logger.error(f"❌ Direct OpenRouter call failed for property agent: {e}")
-        logger.info("🔄 Falling back to Ollama intelligent response generator")
+        logger.error(f"ERROR Direct OpenRouter call failed for property agent: {e}")
+        logger.info("RETRY Falling back to Ollama intelligent response generator")
         fallback_response = await generate_intelligent_fallback("property_agent", user_message, property_context, data_mode)
         return {"messages": [AIMessage(content=fallback_response)]}
 
@@ -426,12 +666,12 @@ async def scheduling_agent_node(state: SwarmState) -> dict:
 
     # Verificação corrigida da chave - não usar fallback se a chave existir
     if not api_key or api_key == "your_openrouter_api_key_here" or api_key.strip() == "":
-        logger.warning("❌ No valid OpenRouter key found. Using Ollama fallback.")
+        logger.warning("ERROR No valid OpenRouter key found. Using Ollama fallback.")
         fallback_response = await generate_intelligent_fallback("scheduling_agent", user_message, property_context, data_mode)
         return {"messages": [AIMessage(content=fallback_response)]}
         
     try:
-        logger.info(f"🧠 Using direct OpenRouter call for scheduling in {data_mode.upper()} mode: '{user_message}' (Key: {api_key[:10]}...)")
+        logger.info(f"BRAIN Using direct OpenRouter call for scheduling in {data_mode.upper()} mode: '{user_message}' (Key: {api_key[:10]}...)")
         
         # Create property details string for scheduling context
         property_details = ""
@@ -453,8 +693,27 @@ PROPERTY FOR VIEWING:
         else:
             property_details = "Property details will be confirmed upon scheduling."
 
+        # 🔥 Add conversation context awareness
+        is_first_message = len(messages) <= 1
+        conversation_info = ""
+        if not is_first_message:
+            conversation_info = f"""
+CONVERSATION CONTEXT:
+- This is NOT the first message in the conversation (message #{len(messages)})
+- Continue the conversation naturally without greeting again
+- Build on previous context and maintain conversation flow
+"""
+        else:
+            conversation_info = """
+CONVERSATION CONTEXT:
+- This is the first message in the conversation
+- You can start with a greeting and introduction
+"""
+
         # Create comprehensive scheduling prompt
         prompt = f"""You are Mike, a professional scheduling assistant for real estate property viewings. You help clients schedule visits efficiently and provide all necessary details.
+
+{conversation_info}
 
 {property_details}
 
@@ -469,6 +728,7 @@ INSTRUCTIONS:
 6. Use appropriate emojis to make responses engaging
 7. Always end with a clear next step or confirmation request
 8. Be professional but friendly and accommodating
+9. IMPORTANT: If this is NOT the first message, do NOT greet the user again
 
 AVAILABLE TIME SUGGESTIONS:
 - Weekdays: 10:00 AM, 2:00 PM, 4:00 PM
@@ -483,189 +743,314 @@ CONVERSATION FLOW:
 
 Respond now as Mike, helping them schedule their property viewing professionally and efficiently."""
 
-        # Usar chamada direta ao OpenRouter
-        import httpx
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "google/gemma-3-27b-it:free",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.2,
-                    "max_tokens": 1000,
-                    "top_p": 0.9,
-                    "frequency_penalty": 0.0,
-                    "presence_penalty": 0.0
-                },
-                timeout=45.0
-            )
+        # 🔥 Use standardized PydanticAI agent creation
+        try:
+            agent = await create_pydantic_agent("scheduling_agent", "mistralai/mistral-7b-instruct:free")
             
-            if response.status_code == 200:
-                result = response.json()
-                content = result["choices"][0]["message"]["content"]
+            # Execute the scheduling analysis
+            llm_start = time.time()
+            logger.info(f"DEBUG: About to call scheduling agent with prompt length: {len(prompt)}")
+            
+            try:
+                response = await agent.run(prompt)
+                llm_duration = time.time() - llm_start
+                logger.info(f"SUCCESS Scheduling agent successful in {llm_duration:.2f}s")
+                
+                content = str(response.output)
                 
                 # Check if response is too short or truncated
                 if len(content.strip()) < 10:
-                    logger.warning(f"⚠️ Scheduling response too short ({len(content)} chars): '{content}'")
-                    # Try again with different parameters
-                    retry_response = await client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": "google/gemma-3-27b-it:free",
-                            "messages": [{"role": "user", "content": prompt}],
-                            "temperature": 0.4,
-                            "max_tokens": 1200,
-                            "top_p": 0.8
-                        },
-                        timeout=45.0
-                    )
+                    logger.warning(f"WARNING Scheduling response too short ({len(content)} chars): '{content}'")
+                    # Try with simpler prompt
+                    simple_prompt = f"""You are Mike, a scheduling assistant. A user said: "{user_message}"
                     
-                    if retry_response.status_code == 200:
-                        retry_result = retry_response.json()
-                        retry_content = retry_result["choices"][0]["message"]["content"]
-                        if len(retry_content.strip()) > len(content.strip()):
-                            content = retry_content
-                            logger.info(f"✅ Scheduling retry successful: {len(content)} chars")
+Property: {property_context.get('formattedAddress', 'Property address available')}
+
+Suggest 2-3 viewing times and ask what works best for them."""
+                    
+                    retry_response = await agent.run(simple_prompt)
+                    retry_content = str(retry_response.output)
+                    if len(retry_content.strip()) > len(content.strip()):
+                        content = retry_content
+                        logger.info(f"SUCCESS Scheduling retry with simpler prompt successful: {len(content)} chars")
                 
-                logger.info(f"✅ Direct OpenRouter call successful: {len(content)} chars")
-                logger.info(f"📝 Scheduling response preview: {content[:100]}...")
+                log_api_call(
+                    api_name="OpenRouter-PydanticAI",
+                    endpoint="/chat/completions", 
+                    method="POST",
+                    status_code=200,
+                    duration=llm_duration
+                )
+                
+                logger.info(f"SUCCESS PydanticAI scheduling agent call successful: {len(content)} chars")
+                logger.info(f"PREVIEW Scheduling response preview: {content[:100]}...")
                 return {"messages": [AIMessage(content=content)]}
-            else:
-                logger.error(f"❌ OpenRouter API error: {response.status_code} - {response.text}")
-                raise Exception(f"OpenRouter API error: {response.status_code}")
+                
+            except Exception as primary_error:
+                llm_duration = time.time() - llm_start
+                error_msg = str(primary_error)
+                logger.error(f"ERROR Scheduling agent failed after {llm_duration:.2f}s: {error_msg}")
+                
+                # Enhanced error analysis for 401 specifically
+                if "401" in error_msg or "No auth credentials found" in error_msg:
+                    logger.error(f"ERROR 401 Authentication Error in Scheduling Agent:")
+                    logger.error(f"  - API key length: {len(api_key) if api_key else 0}")
+                    logger.error(f"  - API key prefix: {api_key[:15] if api_key else 'None'}...")
+                    logger.error(f"  - Agent type: {type(agent)}")
+                
+                # Try fallback agent
+                logger.info("RETRY Trying fallback agent for scheduling")
+                fallback_agent = await create_pydantic_agent("scheduling_agent_fallback", "mistralai/mistral-7b-instruct:free")
+                
+                response = await fallback_agent.run(prompt)
+                content = str(response.output)
+                llm_duration = time.time() - llm_start
+                logger.info(f"SUCCESS Scheduling agent fallback successful in {llm_duration:.2f}s")
+                
+                return {"messages": [AIMessage(content=content)]}
+                
+        except Exception as setup_error:
+            logger.error(f"ERROR: Failed to create scheduling agent: {setup_error}")
+            raise
 
     except Exception as e:
-        logger.error(f"❌ Direct OpenRouter call failed for scheduling agent: {e}")
-        logger.info("🔄 Falling back to Ollama intelligent response generator")
+        logger.error(f"ERROR Direct OpenRouter call failed for scheduling agent: {e}")
+        logger.info("RETRY Falling back to Ollama intelligent response generator")
         fallback_response = await generate_intelligent_fallback("scheduling_agent", user_message, property_context, data_mode)
         return {"messages": [AIMessage(content=fallback_response)]}
 
 
 def route_message(state: SwarmState) -> Literal["search_agent", "property_agent", "scheduling_agent", END]:
     """
-    Roteador inteligente baseado no contexto e histórico.
+    Roteador inteligente baseado no contexto e histórico com Logfire tracing.
     
     Determina qual agente deve processar a próxima mensagem.
     """
-    messages = state.get("messages", [])
-    current_agent = state.get("current_agent", "property_agent")
-    context = state.get("context", {})
-    
-    # Se não há mensagens, começar com property_agent se temos contexto de propriedade
-    if not messages:
+    # Logfire tracing for routing decisions
+    with HandoffContext("router", "routing_decision", "message_analysis") as route_span:
+        messages = state.get("messages", [])
+        current_agent = state.get("current_agent", "property_agent")
+        context = state.get("context", {})
+        
+        # Log routing context to Logfire
+        if route_span:
+            route_span.set_attributes({
+                "router.messages_count": len(messages),
+                "router.current_agent": current_agent,
+                "router.has_property_context": bool(context.get("property_context"))
+            })
+        
+        # Se não há mensagens, começar com property_agent se temos contexto de propriedade
+        if not messages:
+            target_agent = "property_agent" if context.get("property_context") else "search_agent"
+            
+            if route_span:
+                route_span.set_attributes({
+                    "router.decision": target_agent,
+                    "router.reason": "no_messages",
+                    "router.has_context": bool(context.get("property_context"))
+                })
+            
+            log_handoff(
+                from_agent="router",
+                to_agent=target_agent,
+                reason="initial_routing_no_messages",
+                context={"has_property_context": bool(context.get("property_context"))}
+            )
+            
+            return target_agent
+        
+        last_message = messages[-1]
+        
+        # Extract content from LangChain message or dict
+        if hasattr(last_message, 'content'):
+            user_content = last_message.content.lower()
+        else:
+            user_content = last_message.get("content", "").lower()
+        
+        # Log para debug
+        logger = get_logger("swarm_router")
+        logger.info(f"ROUTE Routing message: '{user_content[:100]}...'")
+        
+        if route_span:
+            route_span.set_attributes({
+                "router.message_content_length": len(user_content),
+                "router.message_preview": user_content[:100]
+            })
+        
+        # 🔥 COMPLETELY REWRITTEN ROUTING LOGIC - Intent-based detection
+        
+        # 1. SCHEDULING INTENT - Clear scheduling/viewing requests
+        scheduling_keywords = [
+            # Direct scheduling requests
+            "visit", "see", "view", "tour", "schedule", "appointment", "book", "reserve",
+            "can i visit", "want to visit", "like to visit", "i want to see", "can i see",
+            "schedule for", "book for", "tomorrow", "today", "this week", "next week",
+            "available times", "when can", "what time", "time slots", "calendar",
+            
+            # Time-specific requests
+            "at 3pm", "at 2 pm", "in the morning", "in the afternoon", "in the evening",
+            "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
+        ]
+        
+        # 2. SEARCH INTENT - Looking for properties to find/discover
+        search_keywords = [
+            # Primary search intents - MOST IMPORTANT
+            "i need a place", "need a place", "looking for", "looking for a", "find me",
+            "search", "want a", "need an", "show me properties", "find properties",
+            "i want", "i need", "something nice", "something in", "place to live",
+            
+            # Search criteria specification
+            "bedrooms", "bedroom", "bathrooms", "bathroom", "budget", "around $", "under $",
+            "2 bedrooms", "3 bedrooms", "1 bedroom", "studio", "house", "apartment",
+            "in miami", "in downtown", "near beach", "south beach", "brickell",
+            
+            # Feature searches
+            "with pool", "with gym", "with parking", "pet friendly", "furnished",
+            "ocean view", "waterfront", "balcony", "garden", "terrace",
+            
+            # Alternative/comparison searches
+            "different", "other properties", "alternatives", "similar", "what else",
+            "more options", "something else", "cheaper", "better"
+        ]
+        
+        # 3. PROPERTY ANALYSIS INTENT - About specific current property
+        property_keywords = [
+            # Current property references
+            "this property", "this apartment", "this house", "this unit", "this place",
+            "tell me about", "more about", "details about", "information about",
+            
+            # Property-specific questions when there's property context
+            "how much", "what's the rent", "what's the price", "how big", "size",
+            "square feet", "sq ft", "year built", "when built", "condition",
+            "features", "amenities", "what's included", "utilities",
+            
+            # Only when referring to current property
+            "the first one", "the second one", "that property", "it"
+        ]
+        
+        # 🔥 NEW PRIORITY ROUTING LOGIC - Intent overrides everything
+        
+        # STEP 1: Check for SCHEDULING intent (highest priority when detected)
+        scheduling_matches = [kw for kw in scheduling_keywords if kw in user_content]
+        if scheduling_matches:
+            target_agent = "scheduling_agent"
+            reason = f"scheduling_intent_matched_{scheduling_matches[0]}"
+            
+            logger.info(f"SCHEDULE Routing to scheduling_agent (matched: {scheduling_matches[0]})")
+            
+            if route_span:
+                route_span.set_attributes({
+                    "router.decision": target_agent,
+                    "router.reason": reason,
+                    "router.matched_keyword": scheduling_matches[0],
+                    "router.intent": "scheduling"
+                })
+            
+            log_handoff(
+                from_agent=current_agent,
+                to_agent=target_agent,
+                reason=reason,
+                context={"matched_keywords": scheduling_matches[:3]}
+            )
+            
+            return target_agent
+        
+        # STEP 2: Check for SEARCH intent (new properties, criteria, locations)
+        search_matches = [kw for kw in search_keywords if kw in user_content]
+        if search_matches:
+            target_agent = "search_agent"
+            reason = f"search_intent_matched_{search_matches[0]}"
+            
+            logger.info(f"SEARCH Routing to search_agent (matched: {search_matches[0]})")
+            
+            if route_span:
+                route_span.set_attributes({
+                    "router.decision": target_agent,
+                    "router.reason": reason,
+                    "router.matched_keyword": search_matches[0],
+                    "router.intent": "search"
+                })
+            
+            log_handoff(
+                from_agent=current_agent,
+                to_agent=target_agent,
+                reason=reason,
+                context={"matched_keywords": search_matches[:3]}
+            )
+            
+            return target_agent
+        
+        # STEP 3: Check for PROPERTY ANALYSIS intent (about current property)
+        property_matches = [kw for kw in property_keywords if kw in user_content]
+        if property_matches and context.get("property_context"):
+            target_agent = "property_agent"
+            reason = f"property_intent_matched_{property_matches[0]}"
+            
+            logger.info(f"PROPERTY Routing to property_agent (matched: {property_matches[0]})")
+            
+            if route_span:
+                route_span.set_attributes({
+                    "router.decision": target_agent,
+                    "router.reason": reason,
+                    "router.matched_keyword": property_matches[0],
+                    "router.intent": "property_analysis"
+                })
+            
+            log_handoff(
+                from_agent=current_agent,
+                to_agent=target_agent,
+                reason=reason,
+                context={"matched_keywords": property_matches[:3]}
+            )
+            
+            return target_agent
+        
+        # STEP 4: Context-based fallback
         if context.get("property_context"):
-            return "property_agent"
-        return "search_agent"
-    
-    last_message = messages[-1]
-    
-    # Extract content from LangChain message or dict
-    if hasattr(last_message, 'content'):
-        user_content = last_message.content.lower()
-    else:
-        user_content = last_message.get("content", "").lower()
-    
-    # Log para debug
-    logger = get_logger("swarm_router")
-    logger.info(f"🔀 Routing message: '{user_content[:100]}...'")
-    
-    # Detectar intenções específicas em inglês com mais precisão
-    
-    # Scheduling keywords - mais específicos
-    scheduling_keywords = [
-        "schedule", "visit", "appointment", "tour", "viewing", "book", "reserve",
-        "when can i", "available times", "calendar", "meet", "show me the property",
-        "see the property", "arrange", "set up"
-    ]
-    
-    # Search keywords - quando quer propriedades diferentes ou com características específicas
-    search_keywords = [
-        # Busca explícita
-        "find", "search", "look for", "looking for", "want", "need", "show me", 
-        "different", "other properties", "another property", "similar", "alternatives", 
-        "compare", "what else", "more options", "available", "any properties",
-        
-        # Características específicas que indicam busca
-        "with pool", "has pool", "pool", "with gym", "has gym", "gym", 
-        "with parking", "parking", "with balcony", "balcony", "with garden", "garden",
-        "with terrace", "terrace", "oceanview", "ocean view", "waterfront",
-        
-        # Comparações e preferências
-        "cheaper", "more expensive", "bigger", "smaller", "larger", "more bedrooms", 
-        "less bedrooms", "more bathrooms", "pet friendly", "furnished", "unfurnished",
-        
-        # Tipos de propriedade quando buscando novos
-        "a house", "an apartment", "a condo", "a townhouse", "a studio", "a loft",
-        
-        # Localização diferente
-        "in miami", "in downtown", "near beach", "close to", "downtown area",
-        
-        # Frases que indicam busca
-        "is there", "are there", "do you have", "any other", "something else",
-        "what about", "how about", "instead", "rather than"
-    ]
-    
-    # Property details keywords - sobre propriedade atual específica
-    property_keywords = [
-        "this property", "this apartment", "this house", "this unit", "this place",
-        "tell me about", "details", "information", "how much", "how big", "size",
-        "square feet", "sq ft", "rent", "price", "cost", "monthly", "utilities",
-        "year built", "when built", "age", "condition", "features", "included",
-        # Additional keywords for size questions
-        "big", "large", "small", "area", "space", "footage"
-    ]
-    
-    # Location/neighborhood keywords - sobre área da propriedade atual
-    location_keywords = [
-        "neighborhood", "area around", "surrounding area", "nearby", "close by",
-        "transportation", "commute", "schools", "restaurants", "shopping",
-        "safety", "crime", "walkability", "public transport"
-    ]
-    
-    # Prioridade de roteamento
-    
-    # 1. Se menciona scheduling explicitamente -> scheduling_agent
-    if any(keyword in user_content for keyword in scheduling_keywords):
-        logger.info(f"🗓️ Routing to scheduling_agent (matched: scheduling)")
-        return "scheduling_agent"
-    
-    # 2. Se quer buscar outras propriedades ou propriedades com características específicas -> search_agent  
-    if any(keyword in user_content for keyword in search_keywords):
-        logger.info(f"🔍 Routing to search_agent (matched: search)")
-        return "search_agent"
-    
-    # 3. Se pergunta sobre detalhes específicos da propriedade atual -> property_agent
-    if any(keyword in user_content for keyword in property_keywords) and context.get("property_context"):
-        logger.info(f"🏠 Routing to property_agent (matched: property details)")
-        return "property_agent"
-    
-    # 4. Se pergunta sobre localização/área da propriedade atual -> property_agent
-    if any(keyword in user_content for keyword in location_keywords) and context.get("property_context"):
-        logger.info(f"📍 Routing to property_agent (matched: location)")
-        return "property_agent"
-    
-    # 5. Se temos property_context e pergunta é sobre amenities da propriedade atual -> property_agent
-    if context.get("property_context") and any(word in user_content for word in ["amenities", "facilities", "what does it have"]):
-        logger.info(f"🏢 Routing to property_agent (matched: amenities)")
-        return "property_agent"
-    
-    # 6. Se temos property_context mas pergunta é geral -> property_agent
-    if context.get("property_context"):
-        logger.info(f"🏠 Routing to property_agent (default with property context)")
-        return "property_agent"
-    
-    # 7. Caso contrário -> search_agent para ajudar a encontrar propriedades
-    logger.info(f"🔍 Routing to search_agent (default)")
-    return "search_agent"
+            # If we have property context but no clear intent, stay with property agent
+            target_agent = "property_agent"
+            reason = "fallback_with_property_context"
+            
+            logger.info(f"PROPERTY Routing to property_agent (fallback with property context)")
+            
+            if route_span:
+                route_span.set_attributes({
+                    "router.decision": target_agent,
+                    "router.reason": reason,
+                    "router.intent": "fallback_property"
+                })
+            
+            log_handoff(
+                from_agent=current_agent,
+                to_agent=target_agent,
+                reason=reason,
+                context={"has_property_context": True}
+            )
+            
+            return target_agent
+        else:
+            # No property context, default to search to help find properties
+            target_agent = "search_agent"
+            reason = "fallback_no_property_context"
+            
+            logger.info(f"SEARCH Routing to search_agent (fallback - no property context)")
+            
+            if route_span:
+                route_span.set_attributes({
+                    "router.decision": target_agent,
+                    "router.reason": reason,
+                    "router.intent": "fallback_search"
+                })
+            
+            log_handoff(
+                from_agent=current_agent,
+                to_agent=target_agent,
+                reason=reason,
+                context={"has_property_context": False}
+            )
+            
+            return target_agent
 
 
 class SwarmOrchestrator:
@@ -736,26 +1121,32 @@ class SwarmOrchestrator:
         start_time = time.time()
         
         try:
-            self.logger.info(f"🤖 Processing message with intelligent agents: {message}")
+            self.logger.info(f"AGENT Processing message with intelligent agents: {message}")
             
             # 🔥 NOVO: Usar config com thread_id para memória persistente
             if config:
-                self.logger.info(f"🧠 Using persistent memory with thread_id: {config.get('configurable', {}).get('thread_id')}")
+                self.logger.info(f"BRAIN Using persistent memory with thread_id: {config.get('configurable', {}).get('thread_id')}")
                 result = await self.graph.ainvoke(message, config)
             else:
-                # Fallback para compatibilidade
-                self.logger.warning("No config provided, using default execution without persistent memory")
-                result = await self.graph.ainvoke(message)
+                # Fallback para compatibilidade - criar config padrão com thread_id
+                import uuid
+                default_config = {
+                    "configurable": {
+                        "thread_id": f"default-{uuid.uuid4().hex[:8]}"
+                    }
+                }
+                self.logger.info(f"BRAIN No config provided, using default thread_id: {default_config['configurable']['thread_id']}")
+                result = await self.graph.ainvoke(message, default_config)
             
             # Calcular tempo de execução
             execution_time = time.time() - start_time
             log_performance("swarm_message_processing", execution_time)
             
-            self.logger.info(f"✅ SwarmOrchestrator completed in {execution_time:.2f}s")
+            self.logger.info(f"SUCCESS SwarmOrchestrator completed in {execution_time:.2f}s")
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ Error processing message: {e}")
+            self.logger.error(f"ERROR Error processing message: {e}")
             import traceback
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
@@ -771,15 +1162,15 @@ class SwarmOrchestrator:
             Chunks da resposta em tempo real
         """
         try:
-            self.logger.info(f"📨 Starting astream with message: {message}")
+            self.logger.info(f"STREAM Starting astream with message: {message}")
             
             chunk_count = 0
             async for chunk in self.graph.astream(message):
                 chunk_count += 1
-                self.logger.info(f"📦 Generated chunk #{chunk_count}: {chunk}")
+                self.logger.info(f"CHUNK Generated chunk #{chunk_count}: {chunk}")
                 yield chunk
                 
-            self.logger.info(f"✅ Streaming completed - {chunk_count} chunks generated")
+            self.logger.info(f"SUCCESS Streaming completed - {chunk_count} chunks generated")
                 
         except Exception as e:
             self.logger.error(f"Error in streaming: {e}")
@@ -945,7 +1336,7 @@ def create_intelligent_property_summary(user_message: str, filtered_properties: 
     
     # Se há propriedades filtradas, mostrar elas primeiro
     if filtered_properties:
-        summary = f"\n\n🎯 PROPERTIES MATCHING YOUR CRITERIA ({len(filtered_properties)} found):\n"
+        summary = f"\n\nFILTER PROPERTIES MATCHING YOUR CRITERIA ({len(filtered_properties)} found):\n"
         for i, prop in enumerate(filtered_properties[:5], 1):  # Mostrar até 5
             price = prop.get('price', 0)
             bedrooms = prop.get('bedrooms', 0)
@@ -953,7 +1344,7 @@ def create_intelligent_property_summary(user_message: str, filtered_properties: 
             sqft = prop.get('squareFootage', 0)
             address = prop.get('formattedAddress', 'N/A')
             
-            summary += f"{i}. 🏠 {address}\n"
+            summary += f"{i}. PROPERTY {address}\n"
             summary += f"   💰 ${price:,}/month | 🛏️ {bedrooms}BR/🚿{bathrooms}BA | 📐 {sqft:,} sq ft\n"
         
         if len(filtered_properties) > 5:
@@ -961,18 +1352,18 @@ def create_intelligent_property_summary(user_message: str, filtered_properties: 
         
         # Mostrar algumas alternativas se há mais propriedades
         if len(all_properties) > len(filtered_properties):
-            summary += f"\n🔍 OTHER AVAILABLE OPTIONS ({len(all_properties) - len(filtered_properties)} more):\n"
+            summary += f"\nSEARCH OTHER AVAILABLE OPTIONS ({len(all_properties) - len(filtered_properties)} more):\n"
             other_props = [p for p in all_properties if p not in filtered_properties][:3]
             for i, prop in enumerate(other_props, 1):
                 price = prop.get('price', 0)
                 bedrooms = prop.get('bedrooms', 0)
                 bathrooms = prop.get('bathrooms', 0)
                 address = prop.get('formattedAddress', 'N/A')
-                summary += f"{i}. 🏠 {address} - ${price:,}/month, {bedrooms}BR/{bathrooms}BA\n"
+                summary += f"{i}. PROPERTY {address} - ${price:,}/month, {bedrooms}BR/{bathrooms}BA\n"
     
     else:
         # Nenhuma propriedade atende aos critérios específicos
-        summary = f"\n\n🔍 NO EXACT MATCHES FOUND for your specific criteria.\n"
+        summary = f"\n\nSEARCH NO EXACT MATCHES FOUND for your specific criteria.\n"
         summary += f"📋 AVAILABLE PROPERTIES ({len(all_properties)} total):\n"
         
         # Mostrar uma variedade de propriedades
@@ -984,7 +1375,7 @@ def create_intelligent_property_summary(user_message: str, filtered_properties: 
             sqft = prop.get('squareFootage', 0)
             address = prop.get('formattedAddress', 'N/A')
             
-            summary += f"{i}. 🏠 {address}\n"
+            summary += f"{i}. PROPERTY {address}\n"
             summary += f"   💰 ${price:,}/month | 🛏️ {bedrooms}BR/🚿{bathrooms}BA | 📐 {sqft:,} sq ft\n"
         
         if len(all_properties) > 5:

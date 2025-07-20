@@ -53,14 +53,14 @@ class ModelConfig(BaseSettings):
     
     # Configurações globais
     provider: str = Field(default="openrouter")
-    default_model: str = Field(default="meta-llama/llama-4-maverick:free")
+    default_model: str = Field(default="mistralai/mistral-7b-instruct:free")
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     max_tokens: int = Field(default=2000, gt=0)
     
     # Configurações por agente
-    search_model: str = Field(default="meta-llama/llama-4-maverick:free")
-    property_model: str = Field(default="meta-llama/llama-4-maverick:free")
-    scheduling_model: str = Field(default="meta-llama/llama-4-maverick:free")
+    search_model: str = Field(default="mistralai/mistral-7b-instruct:free")
+    property_model: str = Field(default="mistralai/mistral-7b-instruct:free")
+    scheduling_model: str = Field(default="mistralai/mistral-7b-instruct:free")
 
 
 class APIConfig(BaseSettings):
@@ -141,6 +141,11 @@ class ObservabilityConfig(BaseSettings):
     
     # Logfire
     logfire_token: Optional[str] = Field(default=None, alias="LOGFIRE_TOKEN")
+    
+    # LangSmith
+    langsmith_api_key: Optional[str] = Field(default=None, alias="LANGSMITH_API_KEY")
+    langsmith_project: str = Field(default="agentic-real-estate", alias="LANGSMITH_PROJECT")
+    langsmith_endpoint: str = Field(default="https://api.smith.langchain.com", alias="LANGSMITH_ENDPOINT")
 
 
 class ResilienceConfig(BaseSettings):
@@ -189,19 +194,19 @@ class SwarmConfig(BaseSettings):
     agents: Dict[str, Dict[str, Any]] = Field(
         default_factory=lambda: {
             "search": {
-                "model": "meta-llama/llama-4-maverick:free",
+                "model": "mistralai/mistral-7b-instruct:free",
                 "temperature": 0.1,
                 "max_tokens": 2000,
                 "priority": 1
             },
             "property": {
-                "model": "meta-llama/llama-4-maverick:free", 
+                "model": "mistralai/mistral-7b-instruct:free", 
                 "temperature": 0.2,
                 "max_tokens": 3000,
                 "priority": 2
             },
             "scheduling": {
-                "model": "meta-llama/llama-4-maverick:free",
+                "model": "mistralai/mistral-7b-instruct:free",
                 "temperature": 0.1,
                 "max_tokens": 1500,
                 "priority": 3

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell:*)",
+      "Bash(uv run:*)",
+      "Bash(.venvScriptsactivate)",
+      "Bash(python test:*)",
+      "Bash(python:*)",
+      "Bash(.venvScriptsactivate.ps1)"
+    ],
+    "deny": []
+  }
+}
