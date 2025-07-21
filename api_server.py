@@ -380,7 +380,7 @@ async def search_properties(
         )
         
     except Exception as e:
-        logger.error(f"❌ Error searching properties: {e}")
+        logger.error(f"ERROR Error searching properties: {e}")
         return ApiResponse(
             success=False,
             data=[],
@@ -427,7 +427,7 @@ async def get_property_by_id(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error getting property: {e}")
+        logger.error(f"ERROR Error getting property: {e}")
         return ApiResponse(
             success=False,
             data=None,
@@ -466,7 +466,7 @@ async def create_appointment(appointment: AppointmentRequest):
         # Salvar no storage
         appointments_storage[appointment_id] = appointment_response
         
-        logger.info(f"✅ Appointment created with ID: {appointment_id}")
+        logger.info(f"SUCCESS Appointment created with ID: {appointment_id}")
         
         return ApiResponse(
             success=True,
@@ -475,7 +475,7 @@ async def create_appointment(appointment: AppointmentRequest):
         )
         
     except Exception as e:
-        logger.error(f"❌ Error creating appointment: {e}")
+        logger.error(f"ERROR Error creating appointment: {e}")
         return ApiResponse(
             success=False,
             data=None,
@@ -514,7 +514,7 @@ async def get_available_time_slots(
         )
         
     except Exception as e:
-        logger.error(f"❌ Error getting time slots: {e}")
+        logger.error(f"ERROR Error getting time slots: {e}")
         return ApiResponse(
             success=False,
             data=[],
@@ -539,7 +539,7 @@ async def get_user_appointments(email: str = Query(...)):
         )
         
     except Exception as e:
-        logger.error(f"❌ Error getting user appointments: {e}")
+        logger.error(f"ERROR Error getting user appointments: {e}")
         return ApiResponse(
             success=False,
             data=[],
@@ -550,7 +550,7 @@ async def get_user_appointments(email: str = Query(...)):
 async def cancel_appointment(appointment_id: str):
     """Cancelar agendamento"""
     try:
-        logger.info(f"❌ Cancelling appointment {appointment_id}")
+        logger.info(f"CANCEL Cancelling appointment {appointment_id}")
         
         if appointment_id not in appointments_storage:
             raise HTTPException(status_code=404, detail="Agendamento não encontrado")
@@ -568,7 +568,7 @@ async def cancel_appointment(appointment_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error cancelling appointment: {e}")
+        logger.error(f"ERROR Error cancelling appointment: {e}")
         return ApiResponse(
             success=False,
             data=None,
@@ -610,7 +610,7 @@ async def start_agent_session(
         agent_sessions[session_id] = session
         agent_chat_history[session_id] = []
         
-        logger.info(f"✅ Created agent session: {session_id}")
+        logger.info(f"SUCCESS Created agent session: {session_id}")
         
         return ApiResponse(
             success=True,
@@ -619,7 +619,7 @@ async def start_agent_session(
         )
         
     except Exception as e:
-        logger.error(f"❌ Error starting agent session: {e}")
+        logger.error(f"ERROR Error starting agent session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/agent/chat", response_model=ApiResponse)
@@ -630,7 +630,7 @@ async def send_message_to_agent(
     """Send message to AI agent"""
     try:
         logger.info(f"💬 Processing message in {mode.upper()} mode: '{request.message[:50]}...'")
-        logger.info(f"🏠 Property context from request: {request.property_context.get('formattedAddress', 'N/A') if request.property_context else 'None'}")
+        logger.info(f"PROPERTY Property context from request: {request.property_context.get('formattedAddress', 'N/A') if request.property_context else 'None'}")
         
         # Check if session exists
         if request.session_id not in agent_sessions:
@@ -691,7 +691,7 @@ async def send_message_to_agent(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error processing message: {e}")
+        logger.error(f"ERROR Error processing message: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/agent/session/end", response_model=ApiResponse)
@@ -721,7 +721,7 @@ async def end_agent_session(session_data: Dict[str, str]):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error ending session: {e}")
+        logger.error(f"ERROR Error ending session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/agent/session/{session_id}/history", response_model=ApiResponse)
@@ -742,14 +742,14 @@ async def get_session_history(session_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error getting history: {e}")
+        logger.error(f"ERROR Error getting history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 async def process_with_real_agent(message: str, session: AgentSession, data_mode: str = "real", property_context: Optional[Dict[str, Any]] = None) -> AgentResponse:
     """Process message with real AI agent system"""
     try:
         logger.info(f"🤖 Processing with real SwarmOrchestrator in {data_mode.upper()} data mode: {message[:100]}...")
-        logger.info(f"🏠 Using property context: {property_context.get('formattedAddress', 'N/A') if property_context else 'None provided'}")
+        logger.info(f"PROPERTY Using property context: {property_context.get('formattedAddress', 'N/A') if property_context else 'None provided'}")
         
         # Import the SwarmOrchestrator when needed
         from app.orchestration.swarm import SwarmOrchestrator
@@ -776,7 +776,7 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
                     if str(prop.get('id')) == str(session.property_id):
                         property_context = prop
                         break
-                logger.info(f"🏠 Found property context from session: {property_context.get('formattedAddress', 'N/A') if property_context else 'None'}")
+                logger.info(f"PROPERTY Found property context from session: {property_context.get('formattedAddress', 'N/A') if property_context else 'None'}")
             except Exception as e:
                 logger.warning(f"Could not get property context from session: {e}")
         
@@ -798,7 +798,7 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
             }
         }
         
-        # 🔥 NOVO: Configuração com thread_id para memória persistente
+        # MEMORY: Configuração com thread_id para memória persistente
         config = {
             "configurable": {
                 "thread_id": session.session_id,  # Usar session_id como thread_id
@@ -807,12 +807,12 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
             }
         }
         
-        logger.info(f"🧠 Calling SwarmOrchestrator with thread_id: {session.session_id}")
+        logger.info(f"BRAIN Calling SwarmOrchestrator with thread_id: {session.session_id}")
         
         # Process with the swarm orchestrator
-        result = await orchestrator.process_message(agent_message, config)  # 🔥 PASSAR CONFIG
+        result = await orchestrator.process_message(agent_message, config)  # MEMORY: PASSAR CONFIG
         
-        logger.info(f"✅ SwarmOrchestrator result: {type(result)}")
+        logger.info(f"SUCCESS SwarmOrchestrator result: {type(result)}")
         
         # Extract response from swarm result
         response_content = f"I'm here to help! How can I assist you with this property? (Using {data_mode} data)"
@@ -834,15 +834,15 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
                     # Handle LangChain AIMessage objects
                     if hasattr(last_message, 'content'):
                         response_content = last_message.content
-                        logger.info(f"✅ Extracted content from AIMessage: {len(response_content)} chars")
+                        logger.info(f"SUCCESS Extracted content from AIMessage: {len(response_content)} chars")
                     elif isinstance(last_message, dict) and "content" in last_message:
                         response_content = last_message["content"]
-                        logger.info(f"✅ Extracted content from dict: {len(response_content)} chars")
+                        logger.info(f"SUCCESS Extracted content from dict: {len(response_content)} chars")
             
             # Try to extract current agent
             if hasattr(result, 'get') and result.get("current_agent"):
                 current_agent = result["current_agent"]
-                logger.info(f"✅ Extracted current_agent: {current_agent}")
+                logger.info(f"SUCCESS Extracted current_agent: {current_agent}")
                 
                 # Map agent names for display
                 agent_display_names = {
@@ -851,7 +851,7 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
                     "scheduling_agent": "Mike - Scheduling Specialist"
                 }
                 agent_name = agent_display_names.get(current_agent, f"AI Assistant - {current_agent}")
-                logger.info(f"✅ Mapped agent name: {agent_name}")
+                logger.info(f"SUCCESS Mapped agent name: {agent_name}")
         
         # Generate suggested actions based on agent type
         suggested_actions = []
@@ -884,7 +884,7 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
                 "Compare properties"
             ]
         
-        logger.info(f"🎯 Generated response from {agent_name}: {len(response_content)} chars")
+        logger.info(f"RESPONSE Generated response from {agent_name}: {len(response_content)} chars")
         
         return AgentResponse(
             success=True,
@@ -898,7 +898,7 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
         )
         
     except Exception as e:
-        logger.error(f"❌ Error processing with real agent: {e}")
+        logger.error(f"ERROR Error processing with real agent: {e}")
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         
@@ -964,7 +964,7 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
                 "Compare properties"
             ]
         
-        logger.info(f"🎯 Fallback response from {agent_name}: {len(response_content)} chars")
+        logger.info(f"FALLBACK Fallback response from {agent_name}: {len(response_content)} chars")
         
         return AgentResponse(
             success=True,
@@ -1002,7 +1002,7 @@ async def serve_frontend_routes(path: str):
     return FileResponse("frontend/dist/index.html")
 
 if __name__ == "__main__":
-    print("🚀 Starting Agentic Real Estate Server...")
+    print("STARTUP Starting Agentic Real Estate Server...")
     print("============================================================")
     print("📱 Frontend: http://localhost:8000")
     print("🔧 API Docs: http://localhost:8000/api/docs")

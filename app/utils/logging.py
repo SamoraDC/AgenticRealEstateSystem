@@ -295,7 +295,7 @@ def log_handoff(
             pass  # Falhar silenciosamente
     
     logger.info(
-        f"Handoff: {from_agent} → {to_agent} ({reason})",
+        f"Handoff: {from_agent} -> {to_agent} ({reason})",
         extra=log_data
     )
 

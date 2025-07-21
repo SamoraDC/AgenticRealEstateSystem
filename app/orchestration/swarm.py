@@ -485,26 +485,26 @@ async def property_agent_node(state: SwarmState) -> dict:
             
         try:
             logger.info(f"BRAIN Using direct OpenRouter call for property analysis in {data_mode.upper()} mode: '{user_message}' (Key: {api_key[:10]}...)")
-        logger.info(f"PROPERTY Property context: {property_context.get('formattedAddress', 'No address') if property_context else 'No property context'}")
-        
-        # Create property details string
-        property_details = ""
-        if property_context:
-            # Format price safely
-            price_value = property_context.get('price', 'N/A')
-            if isinstance(price_value, (int, float)):
-                price_formatted = f"${price_value:,}/month"
-            else:
-                price_formatted = f"${price_value}/month"
+            logger.info(f"PROPERTY Property context: {property_context.get('formattedAddress', 'No address') if property_context else 'No property context'}")
             
-            # Format square footage safely
-            sqft_value = property_context.get('squareFootage', 'N/A')
-            if isinstance(sqft_value, (int, float)):
-                sqft_formatted = f"{sqft_value:,} sq ft"
-            else:
-                sqft_formatted = f"{sqft_value} sq ft"
-            
-            property_details = f"""
+            # Create property details string
+            property_details = ""
+            if property_context:
+                # Format price safely
+                price_value = property_context.get('price', 'N/A')
+                if isinstance(price_value, (int, float)):
+                    price_formatted = f"${price_value:,}/month"
+                else:
+                    price_formatted = f"${price_value}/month"
+                
+                # Format square footage safely
+                sqft_value = property_context.get('squareFootage', 'N/A')
+                if isinstance(sqft_value, (int, float)):
+                    sqft_formatted = f"{sqft_value:,} sq ft"
+                else:
+                    sqft_formatted = f"{sqft_value} sq ft"
+                
+                property_details = f"""
 PROPERTY DETAILS:
 • Address: {property_context.get('formattedAddress', 'N/A')}
 • Price: {price_formatted}
@@ -515,28 +515,28 @@ PROPERTY DETAILS:
 • Year Built: {property_context.get('yearBuilt', 'N/A')}
 • City: {property_context.get('city', 'N/A')}, {property_context.get('state', 'N/A')}
 """
-        else:
-            property_details = "No specific property information available."
+            else:
+                property_details = "No specific property information available."
 
-        # 🔥 Add conversation context awareness
-        is_first_message = len(messages) <= 1
-        conversation_info = ""
-        if not is_first_message:
-            conversation_info = f"""
+            # 🔥 Add conversation context awareness
+            is_first_message = len(messages) <= 1
+            conversation_info = ""
+            if not is_first_message:
+                conversation_info = f"""
 CONVERSATION CONTEXT:
 - This is NOT the first message in the conversation (message #{len(messages)})
 - Continue the conversation naturally without greeting again
 - Build on previous context and maintain conversation flow
 """
-        else:
-            conversation_info = """
+            else:
+                conversation_info = """
 CONVERSATION CONTEXT:
 - This is the first message in the conversation
 - You can start with a greeting and introduction
 """
 
-        # Create comprehensive prompt with property context
-        prompt = f"""You are Emma, a professional real estate property expert. You provide clear, objective, and helpful information about properties while being conversational and engaging.
+            # Create comprehensive prompt with property context
+            prompt = f"""You are Emma, a professional real estate property expert. You provide clear, objective, and helpful information about properties while being conversational and engaging.
 
 {conversation_info}
 
@@ -562,8 +562,7 @@ CONVERSATION FLOW:
 
 Respond now as Emma, using the property information provided above to answer the user's question directly and professionally."""
 
-        # 🔥 Use standardized PydanticAI agent creation
-        try:
+            # 🔥 Use standardized PydanticAI agent creation
             agent = await create_pydantic_agent("property_agent", "mistralai/mistral-7b-instruct:free")
             
             # Execute the analysis
@@ -620,24 +619,22 @@ Respond helpfully in 2-3 sentences."""
                 
                 # Try fallback agent
                 logger.info("RETRY Trying fallback agent for property analysis")
-                fallback_agent = await create_pydantic_agent("property_agent_fallback", "mistralai/mistral-7b-instruct:free")
+                try:
+                    fallback_agent = await create_pydantic_agent("property_agent_fallback", "mistralai/mistral-7b-instruct:free")
+                    response = await fallback_agent.run(prompt)
+                    content = str(response.output)
+                    llm_duration = time.time() - llm_start
+                    logger.info(f"SUCCESS Property agent fallback successful in {llm_duration:.2f}s")
+                    return {"messages": [AIMessage(content=content)]}
+                except Exception as fallback_error:
+                    logger.error(f"ERROR Fallback agent also failed: {fallback_error}")
+                    raise primary_error
                 
-                response = await fallback_agent.run(prompt)
-                content = str(response.output)
-                llm_duration = time.time() - llm_start
-                logger.info(f"SUCCESS Property agent fallback successful in {llm_duration:.2f}s")
-                
-                return {"messages": [AIMessage(content=content)]}
-                
-        except Exception as setup_error:
-            logger.error(f"ERROR: Failed to create property agent: {setup_error}")
-            raise
-
-    except Exception as e:
-        logger.error(f"ERROR Direct OpenRouter call failed for property agent: {e}")
-        logger.info("RETRY Falling back to Ollama intelligent response generator")
-        fallback_response = await generate_intelligent_fallback("property_agent", user_message, property_context, data_mode)
-        return {"messages": [AIMessage(content=fallback_response)]}
+        except Exception as e:
+            logger.error(f"ERROR Direct OpenRouter call failed for property agent: {e}")
+            logger.info("RETRY Falling back to Ollama intelligent response generator")
+            fallback_response = await generate_intelligent_fallback("property_agent", user_message, property_context, data_mode)
+            return {"messages": [AIMessage(content=fallback_response)]}
 
 
 async def scheduling_agent_node(state: SwarmState) -> dict:

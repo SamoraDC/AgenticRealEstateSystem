@@ -1,308 +1,495 @@
-# 🏠 Sistema Agêntico Imobiliário com LangGraph-Swarm
+# 🏠 Agentic Real Estate System with LangGraph-Swarm
 
-## 🌟 Visão Geral
+## 🌟 Overview
 
-Sistema de inteligência artificial agêntico avançado para busca e agendamento de imóveis, implementando uma **arquitetura de enxame (swarm)** usando LangGraph-Swarm, onde agentes especializados colaboram dinamicamente para resolver consultas complexas de usuários.
+Advanced artificial intelligence agentic system for real estate search and scheduling, implementing a **swarm architecture** using LangGraph-Swarm, where specialized agents collaborate dynamically to solve complex user queries.
 
-### ✨ Principais Características
+### ✨ Key Features
 
-- 🤖 **Arquitetura Swarm**: Agentes se transferem dinamicamente baseado no contexto
-- 🧠 **PydanticAI + LangGraph**: Combinação de tipagem forte com orquestração avançada  
-- 🔄 **Handoffs Inteligentes**: Transferências automáticas entre agentes especializados
-- 📊 **Observabilidade Completa**: Rastreamento detalhado com LangFuse e Logfire
-- 🌐 **Integração MCP**: Acesso a múltiplas APIs de imóveis via Model Context Protocol
-- 🇧🇷 **Totalmente em Português**: Interface e comunicação em português brasileiro
+- 🤖 **Swarm Architecture**: Agents transfer dynamically based on context
+- 🧠 **PydanticAI + LangGraph**: Combination of strong typing with advanced orchestration
+- 🔄 **Intelligent Handoffs**: Automatic transfers between specialized agents
+- 📊 **Complete Observability**: Detailed tracking with Logfire and LangSmith
+- 🌐 **Multi-API Integration**: Access to multiple real estate APIs
+- 🎯 **Production Ready**: Enterprise-grade reliability and monitoring
+- 🚀 **Real-time Dashboard**: Live system monitoring and analytics
 
-## 🏛️ Arquitetura
+## 🏛️ Architecture
 
-### Agentes Especializados
+### Specialized Agents
 
-#### 🔍 **Search Agent** (Padrão ReAct)
-- Interpreta consultas em linguagem natural
-- Executa buscas inteligentes via MCP
-- Aplica filtros e ranking de relevância
-- **Transfere para**: Scheduling (quando usuário quer agendar) | Supervisor (validação)
+#### 🔍 **Search Agent** (PydanticAI + OpenRouter)
 
-#### 📅 **Scheduling Agent** (Padrão ReAct)  
-- Gerencia agendamentos via Google Calendar
-- Inteligência temporal avançada
-- Validação de horários comerciais
-- **Transfere para**: Search (nova busca) | Supervisor (conflitos)
+- Interprets natural language queries
+- Executes intelligent property searches
+- Applies filters and relevance ranking
+- **Transfers to**: Property Agent (property details) | Scheduling Agent (visit requests)
 
-#### 👥 **Supervisor Agent** (Padrão Chain-of-Drafts)
-- Monitora qualidade das respostas
-- Resolve problemas complexos
-- Coordena fluxo entre agentes
-- **Transfere para**: Qualquer agente conforme necessário
+#### 🏠 **Property Agent** (PydanticAI + OpenRouter)
 
-### Fluxo de Transferências (Handoffs)
+- Analyzes specific property information
+- Provides detailed property insights
+- Handles property-specific questions
+- **Transfers to**: Search Agent (new search) | Scheduling Agent (visit booking)
+
+#### 📅 **Scheduling Agent** (PydanticAI + OpenRouter)
+
+- Manages appointment scheduling via Google Calendar
+- Advanced temporal intelligence
+- Commercial hours validation
+- **Transfers to**: Search Agent (new search) | Property Agent (property details)
+
+### Agent Transfer Flow (Handoffs)
 
 ```mermaid
 graph LR
-    A[👤 User] --> B[🔍 Search Agent]
-    B -.->|"Quer agendar"| C[📅 Scheduling Agent]  
-    C -.->|"Nova busca"| B
-    B -.->|"Problema"| D[👥 Supervisor Agent]
-    C -.->|"Conflito"| D
-    D -.->|"Solução"| B
-    D -.->|"Solução"| C
+    A[User] --> B[Search Agent]
+    B -.->|Property details| C[Property Agent]  
+    C -.->|Schedule visit| D[Scheduling Agent]
+    D -.->|New search| B
+    B -.->|Book visit| D
+    C -.->|Similar properties| B
 ```
 
-## 🚀 Instalação e Configuração
+**Agents:**
+- 👤 **User**: Sistema usuário iniciador
+- 🔍 **Search Agent**: Agente de busca de propriedades  
+- 🏠 **Property Agent**: Agente de análise de propriedades
+- 📅 **Scheduling Agent**: Agente de agendamento
 
-### Pré-requisitos
+### Technical Stack
+
+- **Core Framework**: LangGraph-Swarm for agent orchestration
+- **Agent Implementation**: PydanticAI with OpenRouter integration
+- **Observability**: Logfire + LangSmith dual tracing
+- **Memory System**: Short-term (thread-scoped) + Long-term (cross-thread)
+- **API Server**: FastAPI with real-time dashboard
+- **Error Handling**: Multi-layer fallback (Primary → Fallback → Ollama)
+
+## 🚀 Installation and Setup
+
+### Prerequisites
 
 - Python 3.11+
-- Chaves de API configuradas (ver `.env.example`)
+- API keys configured (see `.env.example`)
+- Windows or Linux environment
 
-### Instalação
+### Installation
 
 ```bash
-# Clonar repositório
+# Clone repository
 git clone <repo-url>
 cd Agentic-Real-Estate
 
-# Instalar dependências
-pip install -e .
+# Create virtual environment
+python -m venv .venv
 
-# Configurar variáveis de ambiente
-cp .env.example .env
-# Editar .env com suas chaves de API
+# Activate virtual environment
+# On Windows:
+.venv\Scripts\activate
+# On Linux/Mac:
+source .venv/bin/activate
+
+# Install dependencies using uv (recommended)
+uv sync
+
+# Or install with pip
+pip install -e .
 ```
 
-### Dependências Principais
+### Environment Configuration
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your API keys
+# Required keys:
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+RENTCAST_API_KEY=your-rentcast-key
+GOOGLE_API_KEY=your-google-key
+LOGFIRE_TOKEN=your-logfire-token (optional)
+LANGSMITH_API_KEY=your-langsmith-key (optional)
+```
+
+### Core Dependencies
 
 ```toml
-# Core
-"pydantic-ai>=0.0.14"        # Agentes com tipagem forte
-"langgraph>=0.3.0"          # Orquestração de grafos
-"langgraph-swarm>=0.0.11"   # Arquitetura de enxame
+# AI Framework
+"pydantic-ai[logfire,openrouter]>=0.0.14"  # Agents with strong typing
+"langgraph>=0.2.0"                         # Graph orchestration
+"langgraph-checkpoint>=2.0.0"              # Memory management
 
-# Observabilidade
-"langfuse>=2.0.0"           # LLMOps e analytics
-"logfire>=0.70.0"           # Observabilidade nativa
+# Observability
+"logfire>=0.51.0"                          # Native observability
+"langsmith>=0.1.0"                         # LangGraph tracing
+"structlog>=24.1.0"                        # Structured logging
 
-# Integrações
-"google-cloud-calendar"      # Google Calendar API
-"fastapi>=0.115.0"          # API web
+# API & Integration
+"fastapi>=0.115.13"                        # Web API
+"httpx>=0.27.0"                            # HTTP client
+"openai>=1.40.0"                           # OpenAI compatibility
 ```
 
-## 🎮 Uso do Sistema
+## 🎮 System Usage
 
-### Exemplo Básico
+### Quick Start
 
 ```python
-from agentic_real_estate.core.config import Settings
-from agentic_real_estate.orchestration.swarm_orchestrator import SwarmOrchestrator
+from app.orchestration.swarm import SwarmOrchestrator
+from config.settings import get_settings
 
-# Configurar sistema
-settings = Settings()
-orchestrator = SwarmOrchestrator(settings)
+# Initialize system
+settings = get_settings()
+orchestrator = SwarmOrchestrator()
 
-# Processar consulta
-response = await orchestrator.process_query(
-    "Quero um apartamento de 2 quartos em Copacabana até R$ 800.000"
-)
+# Process user query
+result = await orchestrator.process_message({
+    "messages": [{"role": "user", "content": "I need a 2-bedroom apartment in Miami under $3000"}]
+})
 
-print(f"Agente: {response.agent_name}")
-print(f"Resposta: {response.content}")
+print(f"Response: {result['messages'][-1]['content']}")
 ```
 
-### Demonstração Interativa
+### Starting the API Server
 
 ```bash
-# Executar demonstração completa
-python examples/swarm_demo.py
+# Development server
+python api_server.py
 
-# Modo interativo
-python examples/swarm_demo.py --interactive
+# Production server
+uvicorn api_server:app --host 0.0.0.0 --port 8000
+
+# Access API documentation
+open http://localhost:8000/api/docs
+
+# Access real-time dashboard
+open http://localhost:8000/dashboard/
 ```
 
-### Casos de Uso Comuns
+### Interactive Demo
 
-#### 1. Busca Seguida de Agendamento
-```
-👤 "Apartamento 2 quartos Copacabana até R$ 800k"
-🔍 search_agent: [encontra propriedades]
-👤 "Gostei do primeiro, quero visitar amanhã 14h"
-🔄 Automático: search_agent → scheduling_agent  
-📅 scheduling_agent: [agenda visita no Google Calendar]
-```
+```bash
+# Run the main system
+python main.py
 
-#### 2. Resolução de Problemas
-```
-👤 "Os preços mostrados estão inconsistentes"
-🔄 Automático: → supervisor_agent
-👥 supervisor_agent: [analisa com Chain-of-Drafts]
-✅ [resolve inconsistência e explica]
+# Or start with specific configuration
+python main.py --debug --data-mode=real
 ```
 
-#### 3. Mudança de Contexto
-```
-👤 "Na verdade prefiro casas em Barra da Tijuca"  
-🔄 Automático: → search_agent
-🔍 search_agent: [nova busca com critérios atualizados]
-```
+## 📊 Real-time Dashboard
 
-## 🔧 Configuração Avançada
+### Dashboard Features
 
-### Handoffs Personalizados
+Access the comprehensive monitoring dashboard at: **http://localhost:8000/dashboard/**
+
+- **🚀 System Status**: Uptime, active sessions, total calls
+- **🤖 Agent Performance**: Success rates, average duration, call counts
+- **🌐 API Monitoring**: External API performance and error tracking
+- **🔄 Recent Handoffs**: Agent transition tracking with reasoning
+- **📋 System Logs**: Real-time log streaming with error filtering
+
+### Dashboard Capabilities
+
+- **Real-time Updates**: WebSocket-based live data (3-second refresh)
+- **Performance Metrics**: Detailed per-agent and per-API statistics
+- **Error Tracking**: Immediate notification of system issues
+- **Mobile Responsive**: Professional interface for all devices
+- **Auto-reconnection**: Automatic recovery from connection drops
+
+## 🔧 Advanced Configuration
+
+### Agent Customization
 
 ```python
-from agentic_real_estate.orchestration.handoff_tools import create_real_estate_handoff_tool
+# Custom agent configuration
+from app.orchestration.swarm import create_pydantic_agent
 
-# Criar handoff customizado
-custom_handoff = create_real_estate_handoff_tool(
-    agent_name="search_agent",
-    name="find_luxury_properties", 
-    description="Transferir para busca de imóveis de alto padrão",
-    requires_context=True
+# Create specialized agent
+agent = await create_pydantic_agent(
+    agent_name="luxury_search_agent",
+    model_name="mistralai/mistral-7b-instruct:free"
 )
 ```
 
-### Observabilidade
-
-```python
-# Configurar LangFuse
-export LANGFUSE_SECRET_KEY="your_key"
-export LANGFUSE_PUBLIC_KEY="your_key" 
-export LANGFUSE_HOST="https://your_langfuse_host"
-
-# Configurar Logfire  
-export LOGFIRE_TOKEN="your_token"
-```
-
-### Integração MCP
-
-```python
-# Configurar APIs de imóveis
-export RENTCAST_API_KEY="your_key"
-export FREEWEBAPI_KEY="your_key"
-
-# Sistema automaticamente agrega dados de múltiplas fontes
-```
-
-## 📊 Monitoramento e Analytics
-
-### LangFuse Dashboard
-- Rastreamento de todas as interações
-- Métricas de performance por agente
-- Análise de custos e latência
-- Debugging de conversas
-
-### Logfire Observability
-- Spans detalhados de execução
-- Métricas em tempo real
-- Alertas proativos
-- Rastreamento de handoffs
-
-### Métricas Importantes
-- **Taxa de Transferência**: % consultas que resultam em handoffs
-- **Precisão por Agente**: Satisfação com respostas específicas
-- **Tempo de Resolução**: Latência fim-a-fim
-- **Taxa de Supervisão**: % intervenções do supervisor
-
-## 🧪 Desenvolvimento e Testes
-
-### Estrutura do Projeto
-
-```
-agentic_real_estate/
-├── core/                    # Configuração e modelos centrais
-│   ├── config.py           # Settings com Pydantic
-│   ├── models.py           # Modelos de dados
-│   └── observability.py    # Setup de observabilidade
-├── agents/                  # Agentes PydanticAI
-│   ├── search_agent.py     # Agente de busca (ReAct)
-│   ├── scheduling_agent.py # Agente de agendamento (ReAct)
-│   └── supervisor_agent.py # Supervisor (Chain-of-Drafts)
-├── orchestration/          # LangGraph-Swarm
-│   ├── swarm_orchestrator.py # Orquestrador principal
-│   └── handoff_tools.py    # Ferramentas de transferência
-├── integrations/           # Integrações externas
-│   └── mcp_server.py      # Servidor MCP para APIs
-└── api/                   # API web (FastAPI)
-```
-
-### Executar Testes
+### Observability Setup
 
 ```bash
-# Testes unitários
+# Logfire configuration
+export LOGFIRE_TOKEN="your_logfire_token"
+
+# LangSmith configuration  
+export LANGSMITH_API_KEY="your_langsmith_key"
+export LANGSMITH_PROJECT="agentic-real-estate"
+export LANGCHAIN_TRACING_V2="true"
+```
+
+### Memory Configuration
+
+```python
+# Configure memory systems
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.store.memory import InMemoryStore
+
+# Thread-scoped memory for conversations
+checkpointer = MemorySaver()
+
+# Cross-thread memory for long-term context
+store = InMemoryStore()
+```
+
+## 🔍 Use Cases and Examples
+
+### 1. Property Search with Details
+
+```
+👤 "2-bedroom apartment in downtown Miami under $2500"
+🔍 search_agent: [finds matching properties]
+👤 "Tell me more about the first one"
+🔄 Automatic: search_agent → property_agent  
+🏠 property_agent: [provides detailed property analysis]
+```
+
+### 2. Search to Scheduling Flow
+
+```
+👤 "Show me condos in Brickell with ocean view"
+🔍 search_agent: [finds properties with ocean views]
+👤 "I'd like to visit the penthouse tomorrow at 2pm"
+🔄 Automatic: search_agent → scheduling_agent
+📅 scheduling_agent: [schedules appointment and confirms]
+```
+
+### 3. Property Analysis and Comparison
+
+```
+👤 "What's the price per square foot of this property?"
+🏠 property_agent: [calculates and explains pricing]
+👤 "Show me similar properties in the area"
+🔄 Automatic: property_agent → search_agent
+🔍 search_agent: [finds comparable properties]
+```
+
+## 📈 System Monitoring and Analytics
+
+### Performance Metrics
+
+- **Agent Success Rate**: % of successful agent executions
+- **Average Response Time**: Mean duration per agent call
+- **Handoff Frequency**: Rate of agent-to-agent transfers
+- **API Health**: External API uptime and performance
+- **Error Rate**: System error frequency and types
+
+### Observability Tools
+
+#### Logfire Integration
+
+- Native PydanticAI instrumentation
+- Detailed agent execution traces
+- Real-time performance monitoring
+- Error context and debugging
+
+#### LangSmith Integration
+
+- LangGraph workflow tracing
+- Node-level performance analysis
+- State transition tracking
+- Conversation flow visualization
+
+#### Custom Dashboard
+
+- Real-time system metrics
+- Agent performance analytics
+- API call monitoring
+- Error tracking and alerting
+
+## 🧪 Development and Testing
+
+### Project Structure
+
+```
+Agentic-Real-Estate/
+├── app/                        # Main application
+│   ├── agents/                 # Individual agent implementations
+│   ├── api/                    # FastAPI routes and dashboard
+│   ├── orchestration/          # LangGraph-Swarm orchestrator
+│   ├── utils/                  # Utilities (logging, observability)
+│   └── models/                 # Pydantic models
+├── config/                     # Configuration management
+├── docs/                       # Documentation
+├── tests/                      # Test suites
+└── api_server.py              # FastAPI application entry point
+```
+
+### Running Tests
+
+```bash
+# Install test dependencies
+uv add --dev pytest pytest-asyncio
+
+# Run all tests
 python -m pytest tests/
 
-# Testes de integração  
-python -m pytest tests/integration/
+# Run specific test categories
+python -m pytest tests/agents/          # Agent tests
+python -m pytest tests/orchestration/   # Swarm tests
+python -m pytest tests/api/            # API tests
 
-# Testes do swarm
-python -m pytest tests/orchestration/
+# Run with coverage
+python -m pytest --cov=app tests/
 ```
 
-### Debugging
+### Development Workflow
 
 ```bash
-# Modo debug com logs detalhados
+# Enable debug mode
 export DEBUG=true
-python examples/swarm_demo.py
 
-# Visualizar grafo do swarm
-python -c "
-from agentic_real_estate.orchestration.swarm_orchestrator import SwarmOrchestrator
-orchestrator = SwarmOrchestrator(Settings())
-orchestrator.swarm.get_graph().print_ascii()
-"
+# Start development server with auto-reload
+python api_server.py
+
+# Monitor logs in real-time
+tail -f logs/agentic_real_estate.log
+
+# Access interactive documentation
+open http://localhost:8000/api/docs
 ```
 
-## 🚀 Deploy e Produção
+## 🚀 Production Deployment
 
-### Docker
-```bash
-# Build da imagem
+### Docker Deployment
+
+```dockerfile
+# Build production image
 docker build -t agentic-real-estate .
 
-# Executar container
-docker run -p 8000:8000 agentic-real-estate
+# Run container
+docker run -d \
+  --name agentic-real-estate \
+  -p 8000:8000 \
+  -e OPENROUTER_API_KEY=your-key \
+  -e RENTCAST_API_KEY=your-key \
+  agentic-real-estate
 ```
 
-### API FastAPI
+### Environment Variables
+
 ```bash
-# Iniciar servidor de desenvolvimento
-uvicorn agentic_real_estate.api.main:app --reload
+# Production configuration
+export ENVIRONMENT=production
+export DEBUG=false
+export OPENROUTER_API_KEY=your-production-key
+export RENTCAST_API_KEY=your-production-key
+export LOGFIRE_TOKEN=your-logfire-token
+export LANGSMITH_API_KEY=your-langsmith-key
 
-# Acessar documentação
-open http://localhost:8000/docs
+# Database configuration (if using external DB)
+export DB_URL=postgresql://user:pass@host:5432/dbname
+export REDIS_URL=redis://host:6379/0
 ```
 
-### Escalabilidade
-- Use Redis para cache distribuído
-- Configure load balancer para múltiplas instâncias
-- Monitore métricas de performance via LangFuse
+### Scaling Considerations
 
-## 📚 Documentação Adicional
+- **Load Balancing**: Use multiple instances behind a load balancer
+- **Redis Integration**: Distributed caching and session storage
+- **Database**: PostgreSQL for persistent data storage
+- **Monitoring**: Production-grade observability with alerts
 
-- [📖 Arquitetura LangGraph-Swarm](docs/LANGGRAPH_SWARM_ARCHITECTURE.md)
-- [🔧 Guia de Configuração](docs/CONFIGURATION.md)
-- [🧪 Guia de Testes](docs/TESTING.md)
-- [🚀 Guia de Deploy](docs/DEPLOYMENT.md)
+## 🔧 Troubleshooting
 
-## 🤝 Contribuição
+### Common Issues
 
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/amazing-feature`)
-3. Commit suas mudanças (`git commit -m 'Add amazing feature'`)
-4. Push para a branch (`git push origin feature/amazing-feature`)
-5. Abra um Pull Request
+#### 1. Unicode Encoding Errors (Windows)
 
-## 📄 Licença
+**Fixed**: All emoji characters replaced with ASCII equivalents
 
-Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
+```
+Error: 'charmap' codec can't encode character
+Solution: System automatically uses ASCII logging
+```
 
-## 🔗 Links Úteis
+#### 2. OpenRouter API Authentication
+
+**Enhanced**: Comprehensive debugging infrastructure
+
+```bash
+# Check API key configuration
+python test_api_key.py
+
+# Enable debug logging
+export DEBUG=true
+```
+
+#### 3. Agent Handoff Issues
+
+**Monitoring**: Real-time handoff tracking in dashboard
+
+```
+Check dashboard for handoff history and routing decisions
+```
+
+### Debug Tools
+
+```bash
+# Syntax check
+python -m py_compile app/orchestration/swarm.py
+
+# API key validation
+python test_api_key.py
+
+# System health check
+curl http://localhost:8000/api/health
+
+# Dashboard metrics
+curl http://localhost:8000/dashboard/api/metrics
+```
+
+## 📚 Additional Documentation
+
+- [🏗️ System Architecture](docs/LANGGRAPH_SWARM_VERIFICATION_SUMMARY.md)
+- [🔧 Complete System Improvements](docs/COMPLETE_SYSTEM_IMPROVEMENTS_SUMMARY.md)
+- [🐛 API Debugging Guide](docs/OPENROUTER_API_DEBUGGING_CHANGES.md)
+- [📊 Dashboard Usage Guide](app/api/dashboard.py)
+
+## 🤝 Contributing
+
+1. Fork the project
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Guidelines
+
+- Follow PydanticAI patterns for agent implementation
+- Use LangGraph best practices for orchestration
+- Add comprehensive tests for new features
+- Update documentation for API changes
+- Ensure observability for new components
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🔗 Useful Links
 
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
-- [LangGraph-Swarm Repository](https://github.com/langchain-ai/langgraph-swarm-py)
 - [PydanticAI Documentation](https://ai.pydantic.dev/)
-- [LangFuse Documentation](https://langfuse.com/docs)
+- [Logfire Documentation](https://logfire.pydantic.dev/)
+- [LangSmith Documentation](https://docs.smith.langchain.com/)
+- [OpenRouter API Documentation](https://openrouter.ai/docs)
+
+## 🎯 System Status
+
+✅ **Production Ready**: All core features implemented and tested
+✅ **Comprehensive Monitoring**: Real-time dashboard and observability
+✅ **Error Handling**: Multi-layer fallback and recovery mechanisms
+✅ **Documentation**: Complete setup and usage documentation
+✅ **Testing**: Comprehensive test suite and debugging tools
 
 ---
 
-**Desenvolvido com ❤️ usando PydanticAI + LangGraph-Swarm**
+**Developed with ❤️ using PydanticAI + LangGraph-Swarm**
+
+**System Version**: 1.0.0 | **Last Updated**: 2024
+**Enterprise-grade AI Agent System for Real Estate Operations**
