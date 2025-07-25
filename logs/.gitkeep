@@ -1,0 +1,8 @@
+# Pasta para logs do sistema agêntico
+# Estrutura:
+# - app.log: Logs gerais da aplicação
+# - agents.log: Logs específicos dos agentes
+# - handoffs.log: Logs de transferências entre agentes
+# - performance.log: Logs de performance e métricas
+# - api.log: Logs de chamadas para APIs externas
+# - errors.log: Logs de erros e exceções 

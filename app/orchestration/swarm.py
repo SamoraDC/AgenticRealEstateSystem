@@ -21,6 +21,7 @@ from ..utils.logging import get_logger, log_handoff, log_performance, log_agent_
 from ..utils.logfire_config import AgentExecutionContext, HandoffContext, get_logfire_config
 from ..utils.langsmith_config import LangGraphExecutionContext, get_langsmith_config, log_graph_startup, log_graph_completion
 from ..utils.ollama_fallback import generate_intelligent_fallback
+from ..utils.datetime_context import format_datetime_context_for_agent, get_scheduling_context_for_agent
 from config.settings import get_settings
 import time
 import os
@@ -270,8 +271,11 @@ CONVERSATION CONTEXT:
 - You can start with a greeting and introduction
 """
 
-            # Create comprehensive search prompt
+            # Create comprehensive search prompt with datetime context
+            datetime_context = format_datetime_context_for_agent()
             prompt = f"""You are Alex, a professional real estate search specialist. You help clients find properties that match their needs and provide market insights.
+
+{datetime_context}
 
 {conversation_info}
 
@@ -401,8 +405,11 @@ Respond now as Alex, using the available property information to help with their
             response_content = str(response.output)
             if len(response_content.strip()) < 10:
                 logger.warning(f"⚠️ Search response too short ({len(response_content)} chars): '{response_content}'")
-                # Try with a simpler prompt
+                # Try with a simpler prompt with datetime context
+                datetime_context = format_datetime_context_for_agent()
                 simple_prompt = f"""You are Alex, a real estate search specialist. A user said: "{user_message}"
+
+{datetime_context}
 
 Respond helpfully about property search in 2-3 sentences. Be friendly and ask what they're looking for."""
                 
@@ -504,6 +511,33 @@ async def property_agent_node(state: SwarmState) -> dict:
                 else:
                     sqft_formatted = f"{sqft_value} sq ft"
                 
+                # Extract listing agent and office information
+                listing_agent = property_context.get('listingAgent', {})
+                listing_office = property_context.get('listingOffice', {})
+                
+                agent_info = ""
+                if listing_agent and isinstance(listing_agent, dict):
+                    agent_name = listing_agent.get('name', 'N/A')
+                    agent_phone = listing_agent.get('phone', 'N/A')
+                    agent_email = listing_agent.get('email', 'N/A')
+                    agent_info = f"""
+LISTING AGENT:
+• Name: {agent_name}
+• Phone: {agent_phone}
+• Email: {agent_email}"""
+
+                office_info = ""
+                if listing_office and isinstance(listing_office, dict):
+                    office_name = listing_office.get('name', 'N/A')
+                    office_phone = listing_office.get('phone', 'N/A')
+                    office_email = listing_office.get('email', 'N/A')
+                    office_info = f"""
+
+LISTING OFFICE:
+• Company: {office_name}
+• Phone: {office_phone}
+• Email: {office_email}"""
+
                 property_details = f"""
 PROPERTY DETAILS:
 • Address: {property_context.get('formattedAddress', 'N/A')}
@@ -514,6 +548,8 @@ PROPERTY DETAILS:
 • Property Type: {property_context.get('propertyType', 'N/A')}
 • Year Built: {property_context.get('yearBuilt', 'N/A')}
 • City: {property_context.get('city', 'N/A')}, {property_context.get('state', 'N/A')}
+• Days on Market: {property_context.get('daysOnMarket', 'N/A')}
+• MLS Number: {property_context.get('mlsNumber', 'N/A')}{agent_info}{office_info}
 """
             else:
                 property_details = "No specific property information available."
@@ -535,8 +571,11 @@ CONVERSATION CONTEXT:
 - You can start with a greeting and introduction
 """
 
-            # Create comprehensive prompt with property context
+            # Create comprehensive prompt with property context and datetime
+            datetime_context = format_datetime_context_for_agent()
             prompt = f"""You are Emma, a professional real estate property expert. You provide clear, objective, and helpful information about properties while being conversational and engaging.
+
+{datetime_context}
 
 {conversation_info}
 
@@ -546,13 +585,15 @@ User's Question: "{user_message}"
 
 INSTRUCTIONS:
 1. If the user asks about price/rent/cost, provide the exact price from the property details above
-2. Always reference the specific property address when answering
-3. Be objective and informative but maintain a friendly, professional tone
-4. Use appropriate emojis to make responses engaging
-5. Keep responses concise but comprehensive (2-4 sentences)
-6. Always end with a question or suggestion to continue the conversation
-7. If asked about aspects not in the property details, acknowledge what you don't know but offer related helpful information
-8. IMPORTANT: If this is NOT the first message, do NOT greet the user again
+2. If the user asks about listing agent contact information, provide the exact details from the LISTING AGENT section above
+3. If the user wants to schedule a visit/viewing/tour, inform them you'll connect them with Mike, the scheduling specialist
+4. Always reference the specific property address when answering
+5. Be objective and informative but maintain a friendly, professional tone
+6. Use appropriate emojis to make responses engaging
+7. Keep responses concise but comprehensive (2-4 sentences)
+8. Always end with a question or suggestion to continue the conversation
+9. If asked about aspects not in the property details, acknowledge what you don't know but offer related helpful information
+10. IMPORTANT: If this is NOT the first message, do NOT greet the user again
 
 CONVERSATION FLOW:
 - Never ask the user to provide information you already have
@@ -579,8 +620,11 @@ Respond now as Emma, using the property information provided above to answer the
                 # Check if response is too short or truncated
                 if len(content.strip()) < 10:
                     logger.warning(f"WARNING Response too short ({len(content)} chars): '{content}'")
-                    # Try with simpler prompt
+                    # Try with simpler prompt with datetime context
+                    datetime_context = format_datetime_context_for_agent()
                     simple_prompt = f"""You are Emma, a real estate property expert. A user asked: "{user_message}"
+
+{datetime_context}
                     
 About this property: {property_context.get('formattedAddress', 'Address available')}
 Price: ${property_context.get('price', 'N/A')}/month
@@ -707,8 +751,11 @@ CONVERSATION CONTEXT:
 - You can start with a greeting and introduction
 """
 
-        # Create comprehensive scheduling prompt
+        # Create comprehensive scheduling prompt with specialized datetime context
+        scheduling_datetime_context = get_scheduling_context_for_agent()
         prompt = f"""You are Mike, a professional scheduling assistant for real estate property viewings. You help clients schedule visits efficiently and provide all necessary details.
+
+{scheduling_datetime_context}
 
 {conversation_info}
 
@@ -718,14 +765,17 @@ User's Request: "{user_message}"
 
 INSTRUCTIONS:
 1. Always reference the specific property address when discussing the viewing
-2. Provide specific available time slots (suggest 2-3 options within the next 3-5 days)
-3. Mention what to bring (ID, proof of income if applicable)
-4. Specify viewing duration (typically 30-45 minutes)
-5. Keep responses concise but complete (2-4 sentences)
-6. Use appropriate emojis to make responses engaging
-7. Always end with a clear next step or confirmation request
-8. Be professional but friendly and accommodating
-9. IMPORTANT: If this is NOT the first message, do NOT greet the user again
+2. Use the CONTEXTO TEMPORAL ATUAL section above to understand dates accurately
+3. When user says "tomorrow", check what date tomorrow actually is from the context above
+4. When user says "next week", refer to the specific dates in the context above
+5. Provide specific available time slots with EXACT DATES (suggest 2-3 options within the next 3-5 days)
+6. Mention what to bring (ID, proof of income if applicable)
+7. Specify viewing duration (typically 30-45 minutes)
+8. Keep responses concise but complete (2-4 sentences)
+9. Use appropriate emojis to make responses engaging
+10. Always end with a clear next step or confirmation request
+11. Be professional but friendly and accommodating
+12. IMPORTANT: If this is NOT the first message, do NOT greet the user again
 
 AVAILABLE TIME SUGGESTIONS:
 - Weekdays: 10:00 AM, 2:00 PM, 4:00 PM
@@ -758,8 +808,11 @@ Respond now as Mike, helping them schedule their property viewing professionally
                 # Check if response is too short or truncated
                 if len(content.strip()) < 10:
                     logger.warning(f"WARNING Scheduling response too short ({len(content)} chars): '{content}'")
-                    # Try with simpler prompt
+                    # Try with simpler prompt with datetime context
+                    scheduling_datetime_context = get_scheduling_context_for_agent()
                     simple_prompt = f"""You are Mike, a scheduling assistant. A user said: "{user_message}"
+
+{scheduling_datetime_context}
                     
 Property: {property_context.get('formattedAddress', 'Property address available')}
 
@@ -877,15 +930,18 @@ def route_message(state: SwarmState) -> Literal["search_agent", "property_agent"
         
         # 🔥 COMPLETELY REWRITTEN ROUTING LOGIC - Intent-based detection
         
-        # 1. SCHEDULING INTENT - Clear scheduling/viewing requests
+        # 1. SCHEDULING INTENT - Clear scheduling/viewing requests (FIXED: More specific patterns)
         scheduling_keywords = [
-            # Direct scheduling requests
-            "visit", "see", "view", "tour", "schedule", "appointment", "book", "reserve",
-            "can i visit", "want to visit", "like to visit", "i want to see", "can i see",
-            "schedule for", "book for", "tomorrow", "today", "this week", "next week",
-            "available times", "when can", "what time", "time slots", "calendar",
+            # Direct scheduling requests with full context
+            "can i visit", "want to visit", "like to visit", "schedule a visit", "book a visit",
+            "i want to see it", "can i see it", "want to see the property", "want to see this property",
+            "schedule for", "book for", "schedule an appointment", "book an appointment",
+            "schedule a tour", "book a tour", "view the property", "tour the property",
             
-            # Time-specific requests
+            # Time-specific scheduling requests
+            "visit tomorrow", "see tomorrow", "visit today", "see today", "visit this week", 
+            "visit next week", "tomorrow at", "today at", "this week at", "next week at",
+            "available times", "when can", "what time", "time slots", "calendar",
             "at 3pm", "at 2 pm", "in the morning", "in the afternoon", "in the evening",
             "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
         ]
@@ -906,9 +962,10 @@ def route_message(state: SwarmState) -> Literal["search_agent", "property_agent"
             "with pool", "with gym", "with parking", "pet friendly", "furnished",
             "ocean view", "waterfront", "balcony", "garden", "terrace",
             
-            # Alternative/comparison searches
+            # Alternative/comparison searches - CRITICAL: Added "bigger", "larger", "see" patterns
             "different", "other properties", "alternatives", "similar", "what else",
-            "more options", "something else", "cheaper", "better"
+            "more options", "something else", "cheaper", "better", "bigger", "larger",
+            "want to see a", "want to see something", "do you have", "show me", "any other"
         ]
         
         # 3. PROPERTY ANALYSIS INTENT - About specific current property

@@ -678,7 +678,11 @@ async def send_message_to_agent(
             }
         ])
         
-        # Update session
+        # Update session with new current_agent if it changed
+        if hasattr(response, 'current_agent') and response.current_agent != session.current_agent:
+            session.current_agent = response.current_agent
+            logger.info(f"SESSION Updated session current_agent to: {response.current_agent}")
+        
         session.updated_at = datetime.now().isoformat()
         agent_sessions[request.session_id] = session
         
@@ -839,19 +843,27 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
                         response_content = last_message["content"]
                         logger.info(f"SUCCESS Extracted content from dict: {len(response_content)} chars")
             
-            # Try to extract current agent
+            # Try to extract current agent from swarm result
+            extracted_agent = None
             if hasattr(result, 'get') and result.get("current_agent"):
-                current_agent = result["current_agent"]
-                logger.info(f"SUCCESS Extracted current_agent: {current_agent}")
+                extracted_agent = result["current_agent"]
+                logger.info(f"SUCCESS Extracted current_agent from result: {extracted_agent}")
+            
+            # Use the extracted agent if available, otherwise fall back to session agent
+            if extracted_agent:
+                current_agent = extracted_agent
+            else:
+                current_agent = session.current_agent
+                logger.info(f"Using session current_agent: {current_agent}")
                 
-                # Map agent names for display
-                agent_display_names = {
-                    "search_agent": "Alex - Search Specialist",
-                    "property_agent": "Emma - Property Expert", 
-                    "scheduling_agent": "Mike - Scheduling Specialist"
-                }
-                agent_name = agent_display_names.get(current_agent, f"AI Assistant - {current_agent}")
-                logger.info(f"SUCCESS Mapped agent name: {agent_name}")
+            # Map agent names for display - CRITICAL: Use the actual current_agent
+            agent_display_names = {
+                "search_agent": "Alex - Search Specialist",
+                "property_agent": "Emma - Property Expert", 
+                "scheduling_agent": "Mike - Scheduling Specialist"
+            }
+            agent_name = agent_display_names.get(current_agent, f"AI Assistant - {current_agent}")
+            logger.info(f"SUCCESS Mapped agent name: {agent_name} for agent: {current_agent}")
         
         # Generate suggested actions based on agent type
         suggested_actions = []
@@ -902,30 +914,15 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         
-        # Fallback inteligente usando os agentes corrigidos
-        from app.orchestration.swarm import generate_intelligent_response
+        # Generate intelligent fallback response based on agent type
+        if session.current_agent == "search_agent":
+            response_content = f"I'm Alex, your search specialist. I'm having trouble processing your request right now, but I'm here to help you find the perfect property. Could you tell me more about what you're looking for? (Using {data_mode} data)"
+        elif session.current_agent == "scheduling_agent":
+            response_content = f"I'm Mike, your scheduling specialist. I'm having trouble processing your request right now, but I'm here to help you schedule property visits. What would you like to schedule? (Using {data_mode} data)"
+        else:  # property_agent
+            response_content = f"I'm Emma, your property expert. I'm having trouble processing your request right now, but I'm here to help you with property details and analysis. What would you like to know? (Using {data_mode} data)"
         
-        # Get property context for fallback
-        property_context = None
-        if session.property_id:
-            try:
-                properties = await asyncio.to_thread(property_service.search_properties, {})
-                for prop in properties:
-                    if str(prop.get('id')) == str(session.property_id):
-                        property_context = prop
-                        break
-            except Exception as prop_e:
-                logger.warning(f"Could not get property context for fallback: {prop_e}")
-        
-        # Generate intelligent fallback response
-        response_content = generate_intelligent_response(
-            session.current_agent, 
-            message, 
-            property_context or {}, 
-            data_mode
-        )
-        
-        # Map agent names for display
+        # Map agent names for display - CRITICAL: Use actual current_agent from session
         agent_display_names = {
             "search_agent": "Alex - Search Specialist",
             "property_agent": "Emma - Property Expert", 

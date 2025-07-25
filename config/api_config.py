@@ -11,6 +11,15 @@ from pydantic import BaseModel, Field
 import requests
 from app.utils.logging import get_logger
 
+# DuckDB storage for Mock mode only
+try:
+    from app.database.schema import PropertyDB
+    from app.database.migration import migrate_mock_to_duckdb
+    DUCKDB_AVAILABLE = True
+except ImportError as e:
+    DUCKDB_AVAILABLE = False
+    get_logger("api_config").warning(f"DuckDB not available, using in-memory mock data: {e}")
+
 # Load environment variables from .env
 # load_dotenv() # REMOVIDO para centralizar a lógica de config
 
@@ -35,6 +44,20 @@ class RentCastAPI:
         self.config = config
         self.logger = get_logger("rentcast_api")
         self.base_url = "https://api.rentcast.io/v1"
+        
+        # Initialize DuckDB for Mock mode only
+        self.property_db = None
+        if self.config.mode == APIMode.MOCK and DUCKDB_AVAILABLE:
+            try:
+                self.property_db = PropertyDB("data/properties.duckdb")
+                # Auto-migrate if database is empty
+                if self.property_db.get_property_count() == 0:
+                    self.logger.info("Empty database detected - running auto-migration...")
+                    migrate_mock_to_duckdb("data/properties.duckdb")
+                self.logger.info("DuckDB initialized for Mock mode")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize DuckDB for Mock mode: {e}")
+                self.property_db = None
         
     def search_properties(self, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -84,7 +107,7 @@ class RentCastAPI:
             if criteria.get("max_rent"):
                 params["maxRent"] = criteria["max_rent"]
             
-            self.logger.info(f"🌐 Making real call to RentCast API: {params}")
+            self.logger.info(f"Making real call to RentCast API: {params}")
             
             response = requests.get(
                 f"{self.base_url}/listings/rental/long-term",
@@ -99,7 +122,7 @@ class RentCastAPI:
                 
                 # RentCast API returns a list directly (not a dict with 'listings')
                 if isinstance(data, list):
-                    self.logger.info(f"✅ Real API returned {len(data)} properties")
+                    self.logger.info(f"Real API returned {len(data)} properties")
                     return self._convert_api_response(data)
                 else:
                     self.logger.warning(f"⚠️ Unexpected API structure: {type(data)}")
@@ -116,7 +139,19 @@ class RentCastAPI:
     def _search_mock_data(self, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Return mock data with EXACT structure from real RentCast API."""
         
-        self.logger.info("📦 Using mock data (identical structure to real API)")
+        # Try DuckDB first if available
+        if self.property_db and DUCKDB_AVAILABLE:
+            try:
+                self.logger.info("Using DuckDB mock data (persistent storage)")
+                properties = self.property_db.search_properties(criteria)
+                self.logger.info(f"DuckDB returned {len(properties)} properties")
+                return properties
+            except Exception as e:
+                self.logger.error(f"DuckDB search failed: {e}")
+                self.logger.info("Falling back to in-memory mock data")
+        
+        # Fallback to in-memory mock data
+        self.logger.info("Using in-memory mock data (fallback mode)")
         
         # MOCK DATA WITH REAL MIAMI PROPERTIES - EXACT RENTCAST API STRUCTURE
         mock_rentcast_data = [
@@ -654,7 +689,7 @@ class RentCastAPI:
                 if prop["squareFootage"] <= max_square_footage
             ]
         
-        self.logger.info(f"📦 Mock (RentCast structure) returned {len(filtered_properties)} properties (filtered from {len(mock_rentcast_data)})")
+        self.logger.info(f"Mock (RentCast structure) returned {len(filtered_properties)} properties (filtered from {len(mock_rentcast_data)})")
         return filtered_properties
     
     def _convert_api_response(self, listings: List[Dict]) -> List[Dict[str, Any]]:
@@ -662,7 +697,7 @@ class RentCastAPI:
         
         # From now on, both mock and real API use the SAME structure
         # No need to convert anymore - return directly
-        self.logger.info(f"✅ Returning {len(listings)} properties (RentCast structure)")
+        self.logger.info(f"Returning {len(listings)} properties (RentCast structure)")
         return listings
 
 

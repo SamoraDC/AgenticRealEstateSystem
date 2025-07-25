@@ -41,6 +41,29 @@ class RedisConfig(BaseSettings):
     max_connections: int = Field(default=10)
 
 
+class DuckDBConfig(BaseSettings):
+    """Configurações do DuckDB para dados Mock."""
+    
+    model_config = SettingsConfigDict(
+        env_prefix="DUCKDB_",
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore"
+    )
+    
+    # Database file path
+    db_path: str = Field(default="data/properties.duckdb", description="Caminho para o arquivo DuckDB")
+    
+    # Auto-migration settings
+    auto_migrate: bool = Field(default=True, description="Migrar automaticamente dados mock na inicialização")
+    force_reload: bool = Field(default=False, description="Forçar recarga dos dados mesmo se já existirem")
+    
+    # Backup settings  
+    backup_enabled: bool = Field(default=False, description="Habilitar backup automático")
+    backup_interval_hours: int = Field(default=24, description="Intervalo de backup em horas")
+    backup_path: str = Field(default="data/backups/", description="Diretório para backups")
+
+
 class ModelConfig(BaseSettings):
     """Configurações de modelos LLM."""
     
@@ -234,6 +257,7 @@ class Settings(BaseSettings):
     # Sub-configurações
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
+    duckdb: DuckDBConfig = Field(default_factory=DuckDBConfig)
     models: ModelConfig = Field(default_factory=ModelConfig)
     apis: APIConfig = Field(default_factory=APIConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)

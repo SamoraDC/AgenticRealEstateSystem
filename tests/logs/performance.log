@@ -1,0 +1,1 @@
+{"timestamp": "2025-07-20T19:00:58.256833", "level": "INFO", "logger": "agentic_real_estate.performance", "message": "Operation swarm_message_processing completed in 2.70s", "module": "logging", "function": "log_performance", "line": 335}
