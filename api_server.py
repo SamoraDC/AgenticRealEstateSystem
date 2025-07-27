@@ -752,14 +752,14 @@ async def get_session_history(session_id: str):
 async def process_with_real_agent(message: str, session: AgentSession, data_mode: str = "real", property_context: Optional[Dict[str, Any]] = None) -> AgentResponse:
     """Process message with real AI agent system"""
     try:
-        logger.info(f"🤖 Processing with real SwarmOrchestrator in {data_mode.upper()} data mode: {message[:100]}...")
+        logger.info(f"🤖 Processing with Fixed LangGraph-Swarm + PydanticAI in {data_mode.upper()} data mode: {message[:100]}...")
         logger.info(f"PROPERTY Using property context: {property_context.get('formattedAddress', 'N/A') if property_context else 'None provided'}")
         
-        # Import the SwarmOrchestrator when needed
-        from app.orchestration.swarm import SwarmOrchestrator
+        # Import the Fixed SwarmOrchestrator when needed
+        from app.orchestration.swarm_fixed import get_fixed_swarm_orchestrator
         
-        # Initialize the orchestrator
-        orchestrator = SwarmOrchestrator()
+        # Initialize the fixed orchestrator (singleton)
+        orchestrator = get_fixed_swarm_orchestrator()
         
         # Use the property_context passed as parameter if available
         # If not provided, try to get it from session
@@ -811,20 +811,20 @@ async def process_with_real_agent(message: str, session: AgentSession, data_mode
             }
         }
         
-        logger.info(f"BRAIN Calling SwarmOrchestrator with thread_id: {session.session_id}")
+        logger.info(f"BRAIN Calling Fixed SwarmOrchestrator with thread_id: {session.session_id}")
         
-        # Process with the swarm orchestrator
+        # Process with the fixed swarm orchestrator
         result = await orchestrator.process_message(agent_message, config)  # MEMORY: PASSAR CONFIG
         
-        logger.info(f"SUCCESS SwarmOrchestrator result: {type(result)}")
+        logger.info(f"SUCCESS Fixed SwarmOrchestrator result: {type(result)}")
         
         # Extract response from swarm result
         response_content = f"I'm here to help! How can I assist you with this property? (Using {data_mode} data)"
         agent_name = "AI Assistant"
         current_agent = session.current_agent
         
-        logger.info(f"🔍 SwarmOrchestrator result type: {type(result)}")
-        logger.info(f"🔍 SwarmOrchestrator result keys: {list(result.keys()) if hasattr(result, 'keys') else 'No keys'}")
+        logger.info(f"🔍 Fixed SwarmOrchestrator result type: {type(result)}")
+        logger.info(f"🔍 Fixed SwarmOrchestrator result keys: {list(result.keys()) if hasattr(result, 'keys') else 'No keys'}")
         
         if result:
             # Try to extract from messages

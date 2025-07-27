@@ -136,17 +136,22 @@ LANGSMITH_API_KEY=your-langsmith-key (optional)
 ### Quick Start
 
 ```python
-from app.orchestration.swarm import SwarmOrchestrator
+from app.orchestration.swarm_fixed import get_fixed_swarm_orchestrator
 from config.settings import get_settings
 
 # Initialize system
 settings = get_settings()
-orchestrator = SwarmOrchestrator()
+orchestrator = get_fixed_swarm_orchestrator()
 
-# Process user query
-result = await orchestrator.process_message({
-    "messages": [{"role": "user", "content": "I need a 2-bedroom apartment in Miami under $3000"}]
-})
+# Process user query with proper configuration
+result = await orchestrator.process_message(
+    {
+        "messages": [{"role": "user", "content": "I need a 2-bedroom apartment in Miami under $3000"}],
+        "session_id": "user_session_001",
+        "context": {"data_mode": "mock"}
+    },
+    config={"configurable": {"thread_id": "session_thread_001"}}
+)
 
 print(f"Response: {result['messages'][-1]['content']}")
 ```
@@ -203,13 +208,15 @@ Access the comprehensive monitoring dashboard at: **http://localhost:8000/dashbo
 
 ```python
 # Custom agent configuration
-from app.orchestration.swarm import create_pydantic_agent
+from app.orchestration.swarm_fixed import FixedSwarmOrchestrator
 
-# Create specialized agent
-agent = await create_pydantic_agent(
-    agent_name="luxury_search_agent",
-    model_name="mistralai/mistral-7b-instruct:free"
-)
+# Create specialized orchestrator
+orchestrator = FixedSwarmOrchestrator()
+
+# Access individual PydanticAI agents
+search_agent = orchestrator.pydantic_search
+property_agent = orchestrator.pydantic_property
+scheduling_agent = orchestrator.pydantic_scheduling
 ```
 
 ### Observability Setup
@@ -228,14 +235,22 @@ export LANGCHAIN_TRACING_V2="true"
 
 ```python
 # Configure memory systems
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 
-# Thread-scoped memory for conversations
-checkpointer = MemorySaver()
+# Fixed memory implementation with proper thread management
+from app.orchestration.swarm_fixed import get_fixed_swarm_orchestrator
 
-# Cross-thread memory for long-term context
-store = InMemoryStore()
+# Get orchestrator with pre-configured memory
+orchestrator = get_fixed_swarm_orchestrator()
+
+# Memory is automatically handled with thread_id in config
+config = {
+    "configurable": {
+        "thread_id": "user_session_123",  # Required for memory persistence
+        "checkpoint_ns": "real_estate_chat"  # Optional namespace
+    }
+}
 ```
 
 ## 🔍 Use Cases and Examples
@@ -481,15 +496,35 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🎯 System Status
 
-✅ **Production Ready**: All core features implemented and tested
-✅ **Comprehensive Monitoring**: Real-time dashboard and observability
-✅ **Error Handling**: Multi-layer fallback and recovery mechanisms
-✅ **Documentation**: Complete setup and usage documentation
-✅ **Testing**: Comprehensive test suite and debugging tools
+✅ **Production Ready**: All core features implemented and tested  
+✅ **Tool Validation Issues Resolved**: Fixed LangGraph-Swarm implementation eliminates validation errors  
+✅ **Enhanced Response Quality**: Improved agent prompts prevent nonsensical responses  
+✅ **Comprehensive Monitoring**: Real-time dashboard and observability  
+✅ **Error Handling**: Multi-layer fallback and recovery mechanisms  
+✅ **Documentation**: Complete setup and usage documentation  
+✅ **Testing**: Comprehensive test suite and debugging tools  
+
+## 🔧 Recent Critical Fixes (Latest)
+
+### Fixed LangGraph-Swarm Implementation
+- **Issue Resolved**: Tool call validation errors causing system failures
+- **Solution**: Created `swarm_fixed.py` with simplified synchronous PydanticAI execution
+- **Benefits**: Maintains all PydanticAI advantages while ensuring stable operation
+- **Location**: `app/orchestration/swarm_fixed.py`
+
+### Enhanced Response Quality
+- **Issue Resolved**: Agents generating nonsensical responses about unrelated topics
+- **Solution**: Improved system prompts and context handling
+- **Result**: Direct, relevant answers to user questions about properties
+
+### API Server Updates
+- **Updated**: API server now uses the fixed implementation by default
+- **Import**: Changed from `swarm_hybrid` to `swarm_fixed`
+- **Stability**: Eliminates timeout errors and tool validation failures
 
 ---
 
 **Developed with ❤️ using PydanticAI + LangGraph-Swarm**
 
-**System Version**: 1.0.0 | **Last Updated**: 2024
+**System Version**: 1.1.0 | **Last Updated**: July 2025  
 **Enterprise-grade AI Agent System for Real Estate Operations**
