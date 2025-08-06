@@ -1,0 +1,11 @@
+Look, here's what I want you to do. I want you to implement a model — right now — by integrating a new LLM provider, which is Groq, the one that is being used. You can use PydanticAI to call this model. So, you’ll call PydanticAI, through Groq, and use the MCP (Model Context Protocol). You’ll consult the mcp.json file to retrieve the JSON configuration, in order to recover the MCP file and use the credentials for PydanticAI, so that you can call this new provider.
+
+Then what’s going to happen is this: you’ll be calling a few models, which I’ll send here, some LLMs from Groq, in order to perform LLM Routing (TensorOpera Router)— that is, routing between LLMs — across different PydanticAI providers, using both OpenRouter and Groq. And you'll also implement a fallback mechanism, so that if none of these models work — if all APIs fail — the system will automatically fall back to the default, which is OLLAMA, specifically the Gemma3n model with 2 billion parameters.
+
+Now, how will this LLM routing be implemented? You’ll define some rules to determine which LLM is giving the best answer. You’ll use the following metrics: BERTScore, BERTSim, and Negative Log Likelihood. After gathering these metrics, you’ll route the request based on which model performs best. To do that, you’ll create an MLP — a simple neural network — that will help decide which LLM provider delivered the best response.
+
+This will always be a comparison between Groq models and Google API models. You’ll make parallel requests to these models, and based on their responses — evaluated through the BERTSim, BERTScore, and Negative Log Likelihood metrics — you’ll pass the outputs through this simple neural network to select the best-performing model. That selected response, grounded in the current context, will be the one returned to the user.
+for models use the "google-genai" to use the "gemini-2.0-flash-live-001" model.
+for the Groq models use the "meta-llama/llama-4-scout-17b-16e-instruct" 
+and if all the API LLMs fail, use the Ollama Fallback to the "gemma3n:e2b"
+
